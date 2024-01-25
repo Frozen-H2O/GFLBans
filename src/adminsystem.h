@@ -22,6 +22,15 @@
 #include "utlvector.h"
 #include "playermanager.h"
 #include <ctime>
+#include "KeyValues.h"
+#include "entity/ccsplayercontroller.h"
+#include <string>
+#include <memory>
+#include <vector>
+#include <utility>
+#include "httpmanager.h"
+#include "vendor/nlohmann/json.hpp"
+using json = nlohmann::json;
 
 #define ADMFLAG_NONE		(0)
 #define ADMFLAG_RESERVATION (1 << 0)  // a
@@ -53,10 +62,109 @@
 
 #define ADMIN_PREFIX "Admin %s has "
 
+class GFLBans_PlayerObjNoIp
+{
+public:
+	std::string m_strGSID; // Unique Steam64 ID of player
+
+	GFLBans_PlayerObjNoIp(std::string strGSID) : m_strGSID(strGSID) {}
+	GFLBans_PlayerObjNoIp(ZEPlayer* player);
+
+	virtual json CreateInfractionJSON() const;
+	// Returns a GFLBans GET Query for the player's Steam64 ID to check for active punishments
+	virtual std::string GB_Query() const;
+};
+
+class GFLBans_PlayerObjIPOptional : public GFLBans_PlayerObjNoIp
+{
+public:
+	std::string m_strIP; // WAN address of player.
+
+	GFLBans_PlayerObjIPOptional(std::string strGSID, std::string strIP = "") :
+		GFLBans_PlayerObjNoIp(strGSID), m_strIP(strIP)
+	{}
+	GFLBans_PlayerObjIPOptional(ZEPlayer* player);
+
+	virtual json CreateInfractionJSON() const;
+	bool HasIP() const;
+	// Returns a GFLBans GET Query for the player's IP to check for active punishments.
+	virtual std::string GB_Query() const override;
+};
+typedef GFLBans_PlayerObjIPOptional GFLBans_PlayerObjSimple;
+
+class GFLBans_InfractionBase
+{
+public:
+	enum GFLInfractionType
+	{
+		Mute,
+		Gag,
+		Ban,
+		AdminChatGag,
+		CallAdminBlock,
+		Silence
+	};
+
+	enum GFLInfractionScope
+	{
+		Server,
+		Global
+	};
+
+	GFLBans_InfractionBase(std::shared_ptr<GFLBans_PlayerObjSimple> plyBadPerson, GFLInfractionType gitType,
+						   std::string strReason, std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr);
+
+	virtual json CreateInfractionJSON() const = 0;
+	auto GetInfractionType() const noexcept -> GFLInfractionType;
+	virtual ~GFLBans_InfractionBase() {}
+
+protected:
+	std::shared_ptr<GFLBans_PlayerObjSimple> m_plyBadPerson;
+	std::shared_ptr<GFLBans_PlayerObjNoIp> m_wAdmin;
+	GFLInfractionType m_gitType;
+	std::string m_strReason;
+};
+
+class GFLBans_Infraction : public GFLBans_InfractionBase
+{
+public:
+	GFLBans_Infraction(std::shared_ptr<GFLBans_PlayerObjSimple> plyBadPerson, GFLInfractionType gitType,
+					   std::string strReason, std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr,
+					   int iDuration = -1, bool bOnlineOnly = false);
+
+	bool IsSession() const noexcept;
+
+	// Creates a JSON object to pass in a POST request to GFLBans
+	virtual json CreateInfractionJSON() const override;
+private:
+	std::string m_strID;
+	int m_iFlags;
+	uint m_wCreated; // UNIX timestamp
+	uint m_wExpires; // UNIX timestamp
+	GFLInfractionScope m_gisScope;
+	bool m_bOnlineOnly;
+	std::string m_strPolicyID; // For tiering policy
+};
+
+class GFLBans_RemoveInfractionsOfPlayer : public GFLBans_InfractionBase
+{
+public:
+	GFLBans_RemoveInfractionsOfPlayer(std::shared_ptr<GFLBans_PlayerObjSimple> plyBadPerson,
+									  GFLInfractionType gitType, std::string strReason,
+									  std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr);
+
+	// Creates a JSON object to pass in a POST request to GFLBans
+	virtual json CreateInfractionJSON() const override;
+
+private:
+	bool m_bIncludeOtherServers;
+};
+
 class CInfractionBase
 {
 public:
-	CInfractionBase(time_t duration, uint64 steamId, bool bEndTime = false) : m_iSteamID(steamId)
+	CInfractionBase(time_t duration, uint64 steamId, bool bEndTime = false, bool bSession = false) :
+		m_iSteamID(steamId), m_bSession(bSession)
 	{
 		// The duration is in minutes here
 		if (!bEndTime)
@@ -76,29 +184,32 @@ public:
 	virtual void UndoInfraction(ZEPlayer *) = 0;
 	time_t GetTimestamp() { return m_iTimestamp; }
 	uint64 GetSteamId64() { return m_iSteamID; }
+	virtual bool IsSession() const noexcept { return m_bSession; }
 
 private:
 	time_t m_iTimestamp;
 	uint64 m_iSteamID;
+	bool m_bSession;
 };
 
 class CBanInfraction : public CInfractionBase
 {
 public:
 	using CInfractionBase::CInfractionBase;
-	
+
 	EInfractionType GetType() override { return Ban; }
 	void ApplyInfraction(ZEPlayer*) override;
 
 	// This isn't needed as we'll just not kick the player when checking infractions upon joining
 	void UndoInfraction(ZEPlayer *) override {}
+	bool IsSession() const noexcept override { return false; }
 };
 
 class CMuteInfraction :public CInfractionBase
 {
 public:
 	using CInfractionBase::CInfractionBase;
-	
+
 	EInfractionType GetType() override { return Mute; }
 	void ApplyInfraction(ZEPlayer*) override;
 	void UndoInfraction(ZEPlayer *) override;
@@ -117,7 +228,7 @@ public:
 class CAdmin
 {
 public:
-	CAdmin(const char* pszName, uint64 iSteamID, uint64 iFlags) : 
+	CAdmin(const char* pszName, uint64 iSteamID, uint64 iFlags) :
 		m_pszName(pszName), m_iSteamID(iSteamID), m_iFlags(iFlags)
 	{}
 
@@ -134,24 +245,90 @@ private:
 class CAdminSystem
 {
 public:
-	CAdminSystem()
-	{
-		LoadAdmins();
-		LoadInfractions();
-	}
-	bool LoadAdmins();
-	bool LoadInfractions();
-	void AddInfraction(CInfractionBase*);
-	void SaveInfractions();
-	bool ApplyInfractions(ZEPlayer *player);
-	bool FindAndRemoveInfraction(ZEPlayer *player, CInfractionBase::EInfractionType type);
-	CAdmin *FindAdmin(uint64 iSteamID);
+	std::vector<HTTPHeader>* m_rghdGFLBansAuth;
 
+	CAdminSystem();
+
+	// This forcibly resyncs all blocks with the web. It does NOT tell GFLBans to remove blocks
+	void RemoveAllPunishments();
+
+	// If given a fDelay in seconds, will remove all timed session punishments after that fDelay
+	// If given no parameter (map change), will remove all session punishments with 0 duration
+	void RemoveSessionPunishments(float fDelay = 0);
+	bool LoadAdmins();
+	void AddInfraction(CInfractionBase*);
+	bool ApplyInfractions(ZEPlayer* player);
+	bool FindAndRemoveInfraction(ZEPlayer* player, CInfractionBase::EInfractionType type, bool bRemoveSession = true);
+	CAdmin* FindAdmin(uint64 iSteamID);
+
+	// Updates m_wLastHeartbeat to the last time the heartbeat successfully got a response from GFLBans
+	// Allows GFLBans to do the following:
+	// - Know if the server is alive
+	// - Update infractions that only decrement while the player is online
+	// - Display information about the server in the Web UI
+	// returns true if ATTEMPTS to heartbeat, false otherwise. This is not based on if GFLBans responds
+	bool GFLBans_Heartbeat();
+
+	// Update g_pAdminSystem with infractions from the web. We are assuming the response json only has 1
+	// each type of punishment and not checking for multiples. If there are multiple active, we can just
+	// apply a new one when the applied one expires (this is also how we will be able to change currently
+	// active punishments that were altered through the web page)
+	void GFLBans_CheckPlayerInfractions(ZEPlayer* player);
+
+	// Send a POST request to GFLBans telling it to add a block for a player
+	void GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> infPunishment,
+								  ZEPlayer* plyBadPerson, CCSPlayerController* pAdmin);
+
+	// Send a POST request to GFLBans telling it to remove all blocks of a given type for a player
+	void GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfractionsOfPlayer> infPunishment,
+								  ZEPlayer* plyBadPerson, CCSPlayerController* pAdmin);
+
+	void RemoveInfractionType(ZEPlayer* player, CInfractionBase::EInfractionType itypeToRemove,
+							  bool  bRemoveGagAndMute);
+
+	std::string GFLBans_GetURL() const noexcept;
+	bool GFLBans_IsAllServers() const noexcept;
+
+	// If bApplyBlock, will attempt to apply block on the server if json contains one
+	// Return Values are based on if jAllBlockInfo contains a block, not if it was applied
+	bool CheckJSONForBlock(ZEPlayer* player, json jAllBlockInfo,
+						   GFLBans_InfractionBase::GFLInfractionType blockType,
+						   bool bApplyBlock = true, bool bRemoveSession = true);
+	void AddDisconnectedPlayer(CPlayerSlot slot);
+	void ShowDisconnectedPlayers(CCSPlayerController* const pAdmin);
+	// Checks whether the punishment length is allowed to be an offline punishment based upon
+	// gflbans.cfg's PUNISH_OFFLINE_DURATION_MIN value. Perma punishments MUST always be offline.
+	bool CanPunishmentBeOffline(int iDuration) const noexcept;
+	void DumpInfractions();
 private:
 	uint64 ParseFlags(const char* pszFlags);
 
 	CUtlVector<CAdmin> m_vecAdmins;
 	CUtlVector<CInfractionBase*> m_vecInfractions;
+
+	std::string m_strGFLBansUrl;
+	std::string m_strHostname;
+	bool m_bGFLBansAllServers;
+
+	// Implemented as a circular buffer. First in, first out, with random access
+	std::pair<std::string, uint64> m_rgDCPly[20];
+	int m_iDCPlyIndex;
+
+	// The minimum amount of minutes for an admin to issue 
+	int m_iMinOfflineDurations;
+
+	// When was the last time a heartbeat occured
+	std::time_t m_wLastHeartbeat;
 };
 
 extern CAdminSystem *g_pAdminSystem;
+
+// Prints out a formatted list of punishments to the player's console
+void ConsoleListPunishments(CCSPlayerController* const player, json punishments);
+
+// Given a formatted time entered by an admin, return the minutes
+int ParseTimeInput(std::string strTime);
+
+// Given a time in seconds, returns a formatted string of the largest (floored) unit of time this exceeds, up to months.
+// Example: FormatTime(70) == "1 minute(s)"
+std::string FormatTime(std::time_t wTime, bool bInSeconds = true);

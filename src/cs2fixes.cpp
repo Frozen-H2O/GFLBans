@@ -260,10 +260,9 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, bool
 	});
 
 	// Check for the expiration of infractions like mutes or gags
-	new CTimer(30.0f, true, []()
-	{
-		g_playerManager->CheckInfractions();
-		return 30.0f;
+	new CTimer(60.0f, true, []() {
+		g_pAdminSystem->GFLBans_Heartbeat();
+		return 60.0f;
 	});
 
 	// run our cfg
@@ -440,6 +439,17 @@ void CS2Fixes::Hook_StartupServer(const GameSessionConfiguration_t& config, ISou
 		if (g_ExtendState != EExtendState::NO_EXTENDS)
 			g_ExtendState = EExtendState::EXTEND_ALLOWED;
 		return -1.0f;
+	});
+
+	// Run a heartbeat on map change to update web, while removing local punishments
+	new CTimer(5.0f, true, []() {
+		if (g_pAdminSystem->GFLBans_Heartbeat())
+		{
+			g_pAdminSystem->RemoveSessionPunishments();
+			return -1.0f;
+		}
+		else
+			return 5.0f;
 	});
 
 	// Set amount of Extends left
