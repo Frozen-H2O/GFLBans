@@ -1853,16 +1853,12 @@ bool CAdminSystem::GFLBans_Heartbeat()
 			if (jPly.empty() || jPly.value("gs_service", "") != "steam")
 				continue;
 
-			uint64 iSteamID = 0;
-			try
-			{
-				iSteamID = std::stoll(jPly.value("gs_id", ""));
-			}
-			catch (...)
-			{
-			//Invalid SteamID given by webpage. Skip player.
+			std::string strSteamID = jPly.value("gs_id", "");
+			if (strSteamID.length() != 17 || std::find_if(strSteamID.begin(), strSteamID.end(), [](unsigned char c) { return !std::isdigit(c); }) != strSteamID.end())
 				continue;
-			}
+			// stoll should be exception safe with above check
+			uint64 iSteamID = std::stoll(strSteamID);
+
 			ZEPlayer* pPlayer = g_playerManager->GetPlayerFromSteamId(iSteamID);
 
 			if (!pPlayer || pPlayer->IsFakeClient())
@@ -1965,8 +1961,12 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 		std::string strBadPlyName = CCSPlayerController::FromSlot(plyBadPerson->GetPlayerSlot())->GetPlayerName();
 
 		strPunishment.append(" " + strBadPlyName + " until the map changes");
+
+		if (infPunishment->GetReason() != "No reason provided")
+			strPunishment.append(" (\1reason: \x09" + infPunishment->GetReason() + "\1)");
+
 		if (std::time(nullptr) - m_wLastHeartbeat > 120)
-			strPunishment.append(" (GFLBans is currently not responding)");
+			strPunishment.append(" (\2GFLBans is currently not responding\1)");
 
 		const char* pszAdminName = pAdmin ? pAdmin->GetPlayerName() : "Console";
 		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "%s%s%s.", pszAdminName, "", strPunishment.c_str(), "");
@@ -2039,9 +2039,12 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 		std::string strBadPlyName = CCSPlayerController::FromSlot(plyBadPerson->GetPlayerSlot())->GetPlayerName();
 
 		if (iDuration == 0)
-			strPunishment = "permanently " + strPunishment + " " + strBadPlyName;
+			strPunishment = "\2permanently\1 " + strPunishment + " " + strBadPlyName;
 		else
-			strPunishment.append(" " + strBadPlyName + " for " + FormatTime(iDuration, false));
+			strPunishment.append(" " + strBadPlyName + " for \2" + FormatTime(iDuration, false) + "\1");
+
+		if (infPunishment->GetReason() != "No reason provided")
+			strPunishment.append(" (\1reason: \x09" + infPunishment->GetReason() + "\1)");
 
 		const char* pszAdminName = pAdmin ? pAdmin->GetPlayerName() : "Console";
 		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "%s%s%s.", pszAdminName, "", strPunishment.c_str(), "");
@@ -2075,7 +2078,7 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 				break;
 		}
 		if (bIsPunished)
-			ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "Local block removed, but GFLBans is currently down. Any web blocks will be reapplied when GFLBans comes back online.");
+			ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "Local block removed, but \2GFLBans is currently down\1. Any web blocks will be reapplied when GFLBans comes back online.");
 	}
 
 #ifdef _DEBUG
@@ -2148,7 +2151,9 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 			return;
 		}
 
-
+		if (infPunishment->GetReason() != "No reason provided")
+			strPunishment.append(" (\1reason: \x09" + infPunishment->GetReason() + "\1)");
+		
 		strPunishment = "un" + strPunishment;
 		const char* pszCommandPlayerName = pAdmin ? pAdmin->GetPlayerName() : "Console";
 		PrintSingleAdminAction(pszCommandPlayerName, CCSPlayerController::FromSlot(plyBadPerson->GetPlayerSlot())->GetPlayerName(),
@@ -2330,7 +2335,11 @@ void CAdminSystem::ShowDisconnectedPlayers(CCSPlayerController* const pAdmin)
 	{
 		std::pair<std::string, uint64> ply = m_rgDCPly[(m_iDCPlyIndex - i) % 20];
 		if (ply.second != 0)
-			ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\t%i. %s - %i", i, ply.first, ply.second);
+		{
+			std::string strTemp = ply.first + " - " + std::to_string(ply.second);
+			ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\t%i. %s", i, strTemp.c_str());
+		}
+			
 	}
 }
 
@@ -2420,16 +2429,20 @@ std::string FormatTime(std::time_t wTime, bool bInSeconds)
 
 int ParseTimeInput(std::string strTime)
 {
-	int iDuration = -1;
-	try
-	{
-		iDuration = std::stoi(strTime.c_str());
-	}
-	catch (...)
-	{
-	//Invalid duration given, default to session punishment
+	if (strTime.length() == 0 || std::find_if(strTime.begin(), strTime.end(), [](char c) { return c == '-'; }) != strTime.end())
 		return -1;
-	}
+
+	std::string strNumbers = "";
+	std::copy_if(strTime.begin(), strTime.end(), std::back_inserter(strNumbers), [](char c) { return std::isdigit(c); });
+
+	if (strNumbers.length() == 0)
+		return -1;
+	else if (strNumbers.length() > 9)
+	// Really high number, just return perma
+		return 0;
+
+	// stoi should be exception safe here due to above checks
+	int iDuration = std::stoi(strNumbers.c_str());
 
 	if (iDuration == 0)
 		return 0;

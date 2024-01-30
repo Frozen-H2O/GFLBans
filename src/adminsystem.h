@@ -116,6 +116,7 @@ public:
 
 	virtual json CreateInfractionJSON() const = 0;
 	auto GetInfractionType() const noexcept -> GFLInfractionType;
+	std::string GetReason() const noexcept { return m_strReason; }
 	virtual ~GFLBans_InfractionBase() {}
 
 protected:
