@@ -295,7 +295,7 @@ public:
 	bool CheckJSONForBlock(ZEPlayer* player, json jAllBlockInfo,
 						   GFLBans_InfractionBase::GFLInfractionType blockType,
 						   bool bApplyBlock = true, bool bRemoveSession = true);
-	void AddDisconnectedPlayer(CPlayerSlot slot);
+	void AddDisconnectedPlayer(const char* pszName, uint64 xuid);
 	void ShowDisconnectedPlayers(CCSPlayerController* const pAdmin);
 	// Checks whether the punishment length is allowed to be an offline punishment based upon
 	// gflbans.cfg's PUNISH_OFFLINE_DURATION_MIN value. Perma punishments MUST always be offline.

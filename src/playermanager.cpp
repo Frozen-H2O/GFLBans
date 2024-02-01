@@ -171,7 +171,6 @@ bool CPlayerManager::OnClientConnected(CPlayerSlot slot, uint64 xuid, const char
 
 void CPlayerManager::OnClientDisconnect(CPlayerSlot slot)
 {
-	g_pAdminSystem->AddDisconnectedPlayer(slot);
 	Message("%d disconnected\n", slot.Get());
 
 	delete m_vecPlayers[slot.Get()];

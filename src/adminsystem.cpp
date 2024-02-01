@@ -1720,7 +1720,7 @@ CAdminSystem::CAdminSystem()
 
 	// Fill out disconnected player list with empty objects which we overwrite as players leave
 	for (int i = 0; i < 20; i++)
-		m_rgDCPly[i] = std::make_pair<std::string, uint64>("", 0);
+		m_rgDCPly[i] = std::pair<std::string, uint64>("", 0);
 	m_iDCPlyIndex = 0;
 }
 
@@ -2305,30 +2305,24 @@ bool CAdminSystem::CheckJSONForBlock(ZEPlayer* player, json jAllBlockInfo,
 	return true;
 }
 
-void CAdminSystem::AddDisconnectedPlayer(CPlayerSlot slot)
+void CAdminSystem::AddDisconnectedPlayer(const char* pszName, uint64 xuid)
 {
-	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(slot.Get());
-	ZEPlayer* pTargetPlayer = g_playerManager->GetPlayer(slot.Get());
-	if (!pTargetPlayer || pTargetPlayer->IsFakeClient() || !pTarget)
-		return;
-
-	m_rgDCPly[m_iDCPlyIndex] = std::make_pair<std::string, uint64>(pTarget->GetPlayerName(), pTargetPlayer->GetSteamId64());
+	m_rgDCPly[m_iDCPlyIndex] = std::make_pair(pszName, xuid);
 	m_iDCPlyIndex = (m_iDCPlyIndex + 1) % 20;
 
-	// These should be directly in CPlayerManager::OnClientDisconnect to be clean, but this
-	// location probably makes it easier to merge since it won't have a conflict here, sooooo....
-	FindAndRemoveInfraction(pTargetPlayer, CInfractionBase::EInfractionType::Ban, false);
-	FindAndRemoveInfraction(pTargetPlayer, CInfractionBase::EInfractionType::Mute, false);
-	FindAndRemoveInfraction(pTargetPlayer, CInfractionBase::EInfractionType::Gag, false);
-	//FindAndRemoveInfraction(pTargetPlayer, CInfractionBase::EInfractionType::AdminChatGag, false);
-	// We dont log Call Admin Block server side, since that is all handled by GFLBans itself
+	// Remove all non-session infractions for a player when they disconnect, since these should be
+	// queried for again when the player rejoins
+	FOR_EACH_VEC(m_vecInfractions, i)
+	{
+		if (m_vecInfractions[i]->GetSteamId64() == xuid && !m_vecInfractions[i]->IsSession())
+			m_vecInfractions.Remove(i);
+	}
 }
 
 void CAdminSystem::ShowDisconnectedPlayers(CCSPlayerController* const pAdmin)
 {
-	if (!pAdmin)
-		return;
-	ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "Disconnected players displayed in console.");
+	if (pAdmin)
+		ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "Disconnected players displayed in console.");
 	ClientPrint(pAdmin, HUD_PRINTCONSOLE, "Disconnected Player(s):");
 	for (int i = 1; i >= 20; i++)
 	{
@@ -2338,7 +2332,6 @@ void CAdminSystem::ShowDisconnectedPlayers(CCSPlayerController* const pAdmin)
 			std::string strTemp = ply.first + " - " + std::to_string(ply.second);
 			ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\t%i. %s", i, strTemp.c_str());
 		}
-			
 	}
 }
 

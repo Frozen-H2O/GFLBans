@@ -589,6 +589,7 @@ void CS2Fixes::Hook_ClientDisconnect( CPlayerSlot slot, ENetworkDisconnectionRea
 {
 	Message( "Hook_ClientDisconnect(%d, %d, \"%s\", %lli, \"%s\")\n", slot, reason, pszName, xuid, pszNetworkID );
 
+	g_pAdminSystem->AddDisconnectedPlayer(pszName, xuid);
 	g_playerManager->OnClientDisconnect(slot);
 }
 
