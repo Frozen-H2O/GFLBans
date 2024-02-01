@@ -1797,7 +1797,7 @@ bool CAdminSystem::GFLBans_Heartbeat()
 	jHeartbeat["max_slots"] = gpGlobals->maxClients;
 
 
-	json jPlayers;
+	json jPlayers = json::array();
 	for (int i = 0; i < gpGlobals->maxClients; i++)
 	{
 		ZEPlayer* pPlayer = g_playerManager->GetPlayer(i);
@@ -1809,7 +1809,6 @@ bool CAdminSystem::GFLBans_Heartbeat()
 
 		jPlayers[i] = gflPlayer.CreateInfractionJSON();
 	}
-
 	jHeartbeat["players"] = jPlayers;
 #ifdef _WIN32
 	jHeartbeat["operating_system"] = "Windows";
