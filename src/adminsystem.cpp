@@ -1181,7 +1181,8 @@ bool CAdminSystem::ApplyInfractions(ZEPlayer *player)
 bool CAdminSystem::FindAndRemoveInfraction(ZEPlayer *player, CInfractionBase::EInfractionType type, bool bRemoveSession)
 {
 	bool bRemovedPunishment = false;
-	FOR_EACH_VEC(m_vecInfractions, i)
+
+	for (int i = (m_vecInfractions).Count() - 1; i >= 0; i--)
 	{
 		if (m_vecInfractions[i]->GetSteamId64() == player->GetSteamId64() && m_vecInfractions[i]->GetType() == type &&
 			(bRemoveSession || !m_vecInfractions[i]->IsSession()))
@@ -1347,6 +1348,7 @@ CON_COMMAND_CHAT_FLAGS(activepunishments, "List a player's active web punishment
 	}, g_pAdminSystem->m_rghdGFLBansAuth);
 }
 
+#if 0
 CON_COMMAND_CHAT_FLAGS(listdc, "List recently disconnected players and their Steam64 IDs", ADMFLAG_CHAT | ADMFLAG_BAN)
 {
 	g_pAdminSystem->ShowDisconnectedPlayers(player);
@@ -1356,6 +1358,7 @@ CON_COMMAND_CHAT_FLAGS(listdisconnected, "List recently disconnected players and
 {
 	g_pAdminSystem->ShowDisconnectedPlayers(player);
 }
+#endif
 
 #ifdef _DEBUG
 CON_COMMAND_CHAT_FLAGS(dumpinf, "Dump server's infractions table", ADMFLAG_CHAT | ADMFLAG_BAN)
@@ -2307,24 +2310,27 @@ bool CAdminSystem::CheckJSONForBlock(ZEPlayer* player, json jAllBlockInfo,
 
 void CAdminSystem::AddDisconnectedPlayer(const char* pszName, uint64 xuid)
 {
+#if 0
 	m_rgDCPly[m_iDCPlyIndex] = std::make_pair(pszName, xuid);
 	m_iDCPlyIndex = (m_iDCPlyIndex + 1) % 20;
+#endif
 
 	// Remove all non-session infractions for a player when they disconnect, since these should be
 	// queried for again when the player rejoins
-	FOR_EACH_VEC(m_vecInfractions, i)
+	for (int i = (m_vecInfractions).Count() - 1; i >= 0 ; i--)
 	{
 		if (m_vecInfractions[i]->GetSteamId64() == xuid && !m_vecInfractions[i]->IsSession())
 			m_vecInfractions.Remove(i);
 	}
 }
 
+#if 0
 void CAdminSystem::ShowDisconnectedPlayers(CCSPlayerController* const pAdmin)
 {
 	if (pAdmin)
 		ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "Disconnected players displayed in console.");
 	ClientPrint(pAdmin, HUD_PRINTCONSOLE, "Disconnected Player(s):");
-	for (int i = 1; i >= 20; i++)
+	for (int i = 1; i <= 20; i++)
 	{
 		std::pair<std::string, uint64> ply = m_rgDCPly[(m_iDCPlyIndex - i) % 20];
 		if (ply.second != 0)
@@ -2334,6 +2340,7 @@ void CAdminSystem::ShowDisconnectedPlayers(CCSPlayerController* const pAdmin)
 		}
 	}
 }
+#endif
 
 inline bool CAdminSystem::CanPunishmentBeOffline(int iDuration) const noexcept
 {
