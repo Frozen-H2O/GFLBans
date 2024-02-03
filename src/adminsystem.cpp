@@ -1382,7 +1382,7 @@ GFLBans_PlayerObjNoIp::GFLBans_PlayerObjNoIp(ZEPlayer* player)
 	if (!player || player->IsFakeClient())
 		m_strGSID = "BOT";
 	else
-		m_strGSID = std::to_string(player->IsAuthenticated() ? player->GetSteamId64() : player->GetUnauthenticatedSteamId64());;
+		m_strGSID = std::to_string(player->IsAuthenticated() ? player->GetSteamId64() : player->GetUnauthenticatedSteamId64());
 }
 
 json GFLBans_PlayerObjNoIp::CreateInfractionJSON() const
@@ -1810,7 +1810,7 @@ bool CAdminSystem::GFLBans_Heartbeat()
 
 		GFLBans_PlayerObjIPOptional gflPlayer(pPlayer);
 
-		jPlayers[i] = gflPlayer.CreateInfractionJSON();
+		jPlayers.push_back(gflPlayer.CreateInfractionJSON());
 	}
 	jHeartbeat["players"] = jPlayers;
 #ifdef _WIN32
