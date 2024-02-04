@@ -1180,9 +1180,11 @@ bool CAdminSystem::ApplyInfractions(ZEPlayer *player)
 
 bool CAdminSystem::FindAndRemoveInfraction(ZEPlayer *player, CInfractionBase::EInfractionType type, bool bRemoveSession)
 {
+	if (!player || player->IsFakeClient() || !player->IsAuthenticated())
+		return false;
 	bool bRemovedPunishment = false;
 
-	for (int i = (m_vecInfractions).Count() - 1; i >= 0; i--)
+	FOR_EACH_VEC_BACK(m_vecInfractions, i)
 	{
 		if (m_vecInfractions[i]->GetSteamId64() == player->GetSteamId64() && m_vecInfractions[i]->GetType() == type &&
 			(bRemoveSession || !m_vecInfractions[i]->IsSession()))
@@ -1759,7 +1761,7 @@ void CAdminSystem::RemoveSessionPunishments(float fDelay)
 #ifdef _DEBUG
 	Message("Attempting to remove all session punishments\n");
 #endif
-	FOR_EACH_VEC(m_vecInfractions, i)
+	FOR_EACH_VEC_BACK(m_vecInfractions, i)
 	{
 		time_t timestamp = m_vecInfractions[i]->GetTimestamp();
 		if (!m_vecInfractions[i]->IsSession() && (timestamp > std::time(nullptr) ||
@@ -2317,7 +2319,7 @@ void CAdminSystem::AddDisconnectedPlayer(const char* pszName, uint64 xuid)
 
 	// Remove all non-session infractions for a player when they disconnect, since these should be
 	// queried for again when the player rejoins
-	for (int i = (m_vecInfractions).Count() - 1; i >= 0 ; i--)
+	FOR_EACH_VEC_BACK(m_vecInfractions, i)
 	{
 		if (m_vecInfractions[i]->GetSteamId64() == xuid && !m_vecInfractions[i]->IsSession())
 			m_vecInfractions.Remove(i);
