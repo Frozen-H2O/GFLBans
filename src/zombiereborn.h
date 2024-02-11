@@ -18,7 +18,7 @@
  */
 
 #pragma once
-
+#include "adminsystem.h"
 #include "eventlistener.h"
 #include "ctimer.h"
 #include "gamesystem.h"
@@ -26,6 +26,8 @@
 #include "entity/ccsplayerpawn.h"
 
 #define ZR_PREFIX " \4[Zombie:Reborn]\1 "
+#define HUMAN_CLASS_KEY_NAME "zr_human_class"
+#define ZOMBIE_CLASS_KEY_NAME "zr_zombie_class"
 
 enum class EZRRoundState
 {
@@ -43,6 +45,7 @@ enum EZRSpawnType
 //everything that human and zombie share
 struct ZRClass
 {
+	bool bEnabled;
 	std::string szClassName;
 	int iHealth;
 	std::string szModelPath;
@@ -51,7 +54,9 @@ struct ZRClass
 	float flScale;
 	float flSpeed;
 	float flGravity;
+	uint64 iAdminFlag;
 	ZRClass(ZRClass *pClass) :
+		bEnabled(pClass->bEnabled),
 		szClassName(pClass->szClassName),
 		iHealth(pClass->iHealth),
 		szModelPath(pClass->szModelPath),
@@ -59,9 +64,11 @@ struct ZRClass
 		szColor(pClass->szColor),
 		flScale(pClass->flScale),
 		flSpeed(pClass->flSpeed),
-		flGravity(pClass->flGravity){};
+		flGravity(pClass->flGravity),
+		iAdminFlag(pClass->iAdminFlag){};
 
 	ZRClass(KeyValues *pKeys) :
+		bEnabled(pKeys->GetBool("enabled", false)),
 		szClassName(std::string(pKeys->GetName())),
 		iHealth(pKeys->GetInt("health", 0)),
 		szModelPath(std::string(pKeys->GetString("model", ""))),
@@ -69,30 +76,39 @@ struct ZRClass
 		szColor(std::string(pKeys->GetString("color", ""))),
 		flScale(pKeys->GetFloat("scale", 0)),
 		flSpeed(pKeys->GetFloat("speed", 0)),
-		flGravity(pKeys->GetFloat("gravity", 0)){};
+		flGravity(pKeys->GetFloat("gravity", 0)),
+		iAdminFlag(g_pAdminSystem->ParseFlags(
+			pKeys->GetString("admin_flag", "")
+		)){};
 	void PrintInfo()
 	{
 		Message(
 			"%s:\n"
+			"\tenabled: %d\n"
 			"\thealth: %d\n"
 			"\tmodel: %s\n"
 			"\tskin: %i\n"
 			"\tcolor: %s\n"
 			"\tscale: %f\n"
 			"\tspeed: %f\n"
-			"\tgravity: %f\n",
+			"\tgravity: %f\n"
+			"\admin flag: %llu\n",
 			szClassName.c_str(),
+			bEnabled,
 			iHealth,
 			szModelPath.c_str(),
 			iSkin,
 			szColor.c_str(),
 			flScale,
 			flSpeed,
-			flGravity);
+			flGravity,
+			iAdminFlag);
 	};
 	void Override(KeyValues *pKeys)
 	{
 		szClassName = std::string(pKeys->GetName());
+		if (pKeys->FindKey("enabled"))
+			bEnabled = pKeys->GetBool("enabled", 0);
 		if (pKeys->FindKey("health"))
 			iHealth = pKeys->GetInt("health", 0);
 		if (pKeys->FindKey("model"))
@@ -107,7 +123,12 @@ struct ZRClass
 			flSpeed = pKeys->GetFloat("speed", 0);
 		if (pKeys->FindKey("gravity"))
 			flGravity = pKeys->GetFloat("gravity", 0);
+		if (pKeys->FindKey("admin_flag"))
+			iAdminFlag = g_pAdminSystem->ParseFlags(
+				pKeys->GetString("admin_flag", "")
+			);
 	};
+	bool IsApplicableTo(CCSPlayerController *pController);
 };
 
 
@@ -133,6 +154,7 @@ struct ZRZombieClass : ZRClass
 	{
 		Message(
 			"%s:\n"
+			"\tenabled: %d\n"
 			"\thealth: %d\n"
 			"\tmodel: %s\n"
 			"\tskin: %i\n"
@@ -140,9 +162,11 @@ struct ZRZombieClass : ZRClass
 			"\tscale: %f\n"
 			"\tspeed: %f\n"
 			"\tgravity: %f\n"
+			"\admin flag: %d\n"
 			"\thealth_regen_count: %d\n"
 			"\thealth_regen_interval: %f\n",
 			szClassName.c_str(),
+			bEnabled,
 			iHealth,
 			szModelPath.c_str(),
 			iSkin,
@@ -150,6 +174,7 @@ struct ZRZombieClass : ZRClass
 			flScale,
 			flSpeed,
 			flGravity,
+			iAdminFlag,
 			iHealthRegenCount,
 			flHealthRegenInterval);
 	};
@@ -157,9 +182,9 @@ struct ZRZombieClass : ZRClass
 	{
 		ZRClass::Override(pKeys);
 		if (pKeys->FindKey("health_regen_count"))
-			flSpeed = pKeys->GetInt("health_regen_count", 0);
+			iHealthRegenCount = pKeys->GetInt("health_regen_count", 0);
 		if (pKeys->FindKey("health_regen_interval"))
-			flGravity = pKeys->GetFloat("health_regen_interval", 0);
+			flHealthRegenInterval = pKeys->GetFloat("health_regen_interval", 0);
 	};
 };
 
@@ -174,11 +199,12 @@ public:
 	void LoadPlayerClass();
 	ZRHumanClass* GetHumanClass(const char *pszClassName);
 	void ApplyHumanClass(ZRHumanClass *pClass, CCSPlayerPawn *pPawn);
-	void ApplyDefaultHumanClass(CCSPlayerPawn *pPawn);
+	void ApplyPreferredOrDefaultHumanClass(CCSPlayerPawn *pPawn);
 	ZRZombieClass* GetZombieClass(const char*pszClassName);
 	void ApplyZombieClass(ZRZombieClass *pClass, CCSPlayerPawn *pPawn);
-	void ApplyDefaultZombieClass(CCSPlayerPawn *pPawn);
+	void ApplyPreferredOrDefaultZombieClass(CCSPlayerPawn *pPawn);
 	void PrecacheModels(IEntityResourceManifest* pResourceManifest);
+	void GetZRClassList(const char* sTeam, CUtlVector<ZRClass*> &vecClasses);
 private:
 	void ApplyBaseClass(ZRClass* pClass, CCSPlayerPawn *pPawn);
 	CUtlVector<ZRZombieClass*> m_vecZombieDefaultClass;
@@ -201,7 +227,7 @@ public:
 	static void RemoveAllTimers();
 
 private:
-	static float s_flNextExecution;
+	static double s_flNextExecution;
 	static CZRRegenTimer *s_vecRegenTimers[MAXPLAYERS];
 	int m_iRegenAmount;
 	CHandle<CCSPlayerPawn> m_hPawnHandle;
@@ -245,13 +271,3 @@ void ZR_Detour_CEntityIdentity_AcceptInput(CEntityIdentity* pThis, CUtlSymbolLar
 void ZR_Hook_ClientPutInServer(CPlayerSlot slot, char const *pszName, int type, uint64 xuid);
 void ZR_Hook_ClientCommand_JoinTeam(CPlayerSlot slot, const CCommand &args);
 void ZR_Precache(IEntityResourceManifest* pResourceManifest);
-
-// need to replace with actual cvar someday
-#define CON_ZR_CVAR(name, description, variable_name, variable_type, variable_default)					\
-	CON_COMMAND_F(name, description, FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY)							\
-	{																									\
-		if (args.ArgC() < 2)																			\
-			Msg("%s %i\n", args[0], variable_name);														\
-		else																							\
-			variable_name = V_StringTo##variable_type(args[1], variable_default);						\
-	}

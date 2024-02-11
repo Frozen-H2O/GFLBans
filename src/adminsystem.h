@@ -62,6 +62,8 @@ using json = nlohmann::json;
 
 #define ADMIN_PREFIX "Admin %s has "
 
+void PrintSingleAdminAction(const char* pszAdminName, const char* pszTargetName, const char* pszAction, const char* pszAction2, const char* prefix);
+void PrintMultiAdminAction(ETargetType nType, const char* pszAdminName, const char* pszAction, const char* pszAction2, const char* prefix);
 class GFLBans_PlayerObjNoIp
 {
 public:
@@ -301,9 +303,9 @@ public:
 	// gflbans.cfg's PUNISH_OFFLINE_DURATION_MIN value. Perma punishments MUST always be offline.
 	bool CanPunishmentBeOffline(int iDuration) const noexcept;
 	void DumpInfractions();
-private:
 	uint64 ParseFlags(const char* pszFlags);
 
+private:
 	CUtlVector<CAdmin> m_vecAdmins;
 	CUtlVector<CInfractionBase*> m_vecInfractions;
 
@@ -324,6 +326,7 @@ private:
 
 extern CAdminSystem *g_pAdminSystem;
 
+void PrecacheAdminBeaconParticle(IEntityResourceManifest * pResourceManifest);
 // Prints out a formatted list of punishments to the player's console
 void ConsoleListPunishments(CCSPlayerController* const player, json punishments);
 

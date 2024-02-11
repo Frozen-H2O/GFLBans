@@ -51,6 +51,7 @@
 #include "httpmanager.h"
 #include "discord.h"
 #include "map_votes.h"
+#include "user_preferences.h"
 #include "entity/cgamerules.h"
 #include "entity/ccsplayercontroller.h"
 #include "entitylistener.h"
@@ -60,7 +61,7 @@
 
 #include "tier0/memdbgon.h"
 
-float g_flUniversalTime;
+double g_flUniversalTime;
 float g_flLastTickedTime;
 bool g_bHasTicked;
 
@@ -226,14 +227,6 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, bool
 	UnlockConCommands();
 	ConVar_Register(FCVAR_RELEASE | FCVAR_CLIENT_CAN_EXECUTE | FCVAR_GAMEDLL);
 
-	g_pAdminSystem = new CAdminSystem();
-	g_playerManager = new CPlayerManager(late);
-	g_pDiscordBotManager = new CDiscordBotManager();
-	g_pZRPlayerClassManager = new CZRPlayerClassManager();
-	g_pMapVoteSystem = new CMapVoteSystem();
-	g_pZRWeaponConfig = new ZRWeaponConfig();
-	g_pEntityListener = new CEntityListener();
-
 	if (late)
 	{
 		RegisterEventListeners();
@@ -242,6 +235,16 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, bool
 		g_pNetworkGameServer = g_pNetworkServerService->GetIGameServer();
 		gpGlobals = g_pNetworkGameServer->GetGlobals();
 	}
+
+	g_pAdminSystem = new CAdminSystem();
+	g_playerManager = new CPlayerManager(late);
+	g_pDiscordBotManager = new CDiscordBotManager();
+	g_pZRPlayerClassManager = new CZRPlayerClassManager();
+	g_pMapVoteSystem = new CMapVoteSystem();
+	g_pUserPreferencesSystem = new CUserPreferencesSystem();
+	g_pUserPreferencesStorage = new CUserPreferencesREST();
+	g_pZRWeaponConfig = new ZRWeaponConfig();
+	g_pEntityListener = new CEntityListener();
 
 	RegisterWeaponCommands();
 
@@ -314,6 +317,12 @@ bool CS2Fixes::Unload(char *error, size_t maxlen)
 
 	if (g_pZRWeaponConfig)
 		delete g_pZRWeaponConfig;
+
+	if (g_pUserPreferencesSystem)
+		delete g_pUserPreferencesSystem;
+
+	if (g_pUserPreferencesStorage)
+		delete g_pUserPreferencesStorage;
 
 	if (g_pEntityListener)
 		delete g_pEntityListener;
@@ -425,6 +434,7 @@ void CS2Fixes::Hook_StartupServer(const GameSessionConfiguration_t& config, ISou
 	g_bHasTicked = false;
 
 	RegisterEventListeners();
+	g_playerManager->SetupInfiniteAmmo();
 
 	// Disable RTV and Extend votes after map has just started
 	g_RTVState = ERTVState::MAP_START;
@@ -436,7 +446,7 @@ void CS2Fixes::Hook_StartupServer(const GameSessionConfiguration_t& config, ISou
 		if (g_RTVState != ERTVState::BLOCKED_BY_ADMIN)
 			g_RTVState = ERTVState::RTV_ALLOWED;
 
-		if (g_ExtendState != EExtendState::NO_EXTENDS)
+		if (g_ExtendState < EExtendState::POST_EXTEND_NO_EXTENDS_LEFT)
 			g_ExtendState = EExtendState::EXTEND_ALLOWED;
 		return -1.0f;
 	});
@@ -649,7 +659,7 @@ void CS2Fixes::Hook_GameFrame( bool simulating, bool bFirstTick, bool bLastTick 
 void CS2Fixes::Hook_CheckTransmit(CCheckTransmitInfo **ppInfoList, int infoCount, CBitVec<16384> &unionTransmitEdicts,
 								const Entity2Networkable_t **pNetworkables, const uint16 *pEntityIndicies, int nEntities)
 {
-	if (!g_bEnableHide || !g_pEntitySystem)
+	if (!g_pEntitySystem)
 		return;
 
 	VPROF_ENTER_SCOPE(__FUNCTION__);
@@ -658,9 +668,10 @@ void CS2Fixes::Hook_CheckTransmit(CCheckTransmitInfo **ppInfoList, int infoCount
 	{
 		auto &pInfo = ppInfoList[i];
 
-		// offset 560 happens to have a player index here,
+		// the offset happens to have a player index here,
 		// though this is probably part of the client class that contains the CCheckTransmitInfo
-		int iPlayerSlot = (int)*((uint8 *)pInfo + 560);
+		static int offset = g_GameConfig->GetOffset("CheckTransmitPlayerSlot");
+		int iPlayerSlot = (int)*((uint8 *)pInfo + offset);
 
 		CCSPlayerController* pSelfController = CCSPlayerController::FromSlot(iPlayerSlot);
 
@@ -677,7 +688,16 @@ void CS2Fixes::Hook_CheckTransmit(CCheckTransmitInfo **ppInfoList, int infoCount
 			CCSPlayerController* pController = CCSPlayerController::FromSlot(j);
 
 			// Always transmit to themselves
-			if (!pController || j == iPlayerSlot)
+			if (!pController || !pController->IsConnected() || j == iPlayerSlot)
+				continue;
+
+			CBarnLight *pFlashLight = g_playerManager->GetPlayer(j)->GetFlashLight();
+
+			// Don't transmit other players' flashlights
+			if (pFlashLight)
+				pInfo->m_pTransmitEntity->Clear(pFlashLight->entindex());
+
+			if (!g_bEnableHide)
 				continue;
 
 			auto pPawn = pController->GetPawn();
