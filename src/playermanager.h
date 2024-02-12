@@ -197,7 +197,7 @@ public:
 	void SetupInfiniteAmmo();
 	CPlayerSlot GetSlotFromUserId(uint16 userid);
 	ZEPlayer *GetPlayerFromUserId(uint16 userid);
-	ZEPlayer *GetPlayerFromSteamId(uint64 steamid);
+	ZEPlayer *GetPlayerFromSteamId(uint64 steamid, bool bIgnoreAuthentication = false);
 	ETargetType TargetPlayerString(int iCommandClient, const char* target, int &iNumClients, int *clients);
 
 	ZEPlayer *GetPlayer(CPlayerSlot slot);

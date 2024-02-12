@@ -462,9 +462,6 @@ void CS2Fixes::Hook_StartupServer(const GameSessionConfiguration_t& config, ISou
 			return 5.0f;
 	});
 
-	// Set amount of Extends left
-	g_iExtendsLeft = 1;
-
 	if (g_bEnableZR)
 		ZR_OnStartupServer();
 }
@@ -599,7 +596,7 @@ void CS2Fixes::Hook_ClientDisconnect( CPlayerSlot slot, ENetworkDisconnectionRea
 {
 	Message( "Hook_ClientDisconnect(%d, %d, \"%s\", %lli, \"%s\")\n", slot, reason, pszName, xuid, pszNetworkID );
 
-	g_pAdminSystem->AddDisconnectedPlayer(pszName, xuid);
+	g_pAdminSystem->AddDisconnectedPlayer(pszName, xuid, pszNetworkID);
 	g_playerManager->OnClientDisconnect(slot);
 }
 

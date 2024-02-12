@@ -297,7 +297,7 @@ public:
 	bool CheckJSONForBlock(ZEPlayer* player, json jAllBlockInfo,
 						   GFLBans_InfractionBase::GFLInfractionType blockType,
 						   bool bApplyBlock = true, bool bRemoveSession = true);
-	void AddDisconnectedPlayer(const char* pszName, uint64 xuid);
+	void AddDisconnectedPlayer(const char* pszName, uint64 xuid, const char* pszIP);
 	void ShowDisconnectedPlayers(CCSPlayerController* const pAdmin);
 	// Checks whether the punishment length is allowed to be an offline punishment based upon
 	// gflbans.cfg's PUNISH_OFFLINE_DURATION_MIN value. Perma punishments MUST always be offline.
@@ -314,7 +314,7 @@ private:
 	bool m_bGFLBansAllServers;
 
 	// Implemented as a circular buffer. First in, first out, with random access
-	std::pair<std::string, uint64> m_rgDCPly[20];
+	std::tuple<std::string, uint64, std::string> m_rgDCPly[20];
 	int m_iDCPlyIndex;
 
 	// The minimum amount of minutes for an admin to issue 

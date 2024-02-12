@@ -226,7 +226,7 @@ bool CPlayerManager::OnClientConnected(CPlayerSlot slot, uint64 xuid, const char
 	ResetPlayerFlags(slot.Get());
 
 	g_pMapVoteSystem->ClearPlayerInfo(slot.Get());
-	
+
 	return true;
 }
 
@@ -250,6 +250,7 @@ void CPlayerManager::OnClientPutInServer(CPlayerSlot slot)
 	ZEPlayer* pPlayer = m_vecPlayers[slot.Get()];
 
 	pPlayer->SetInGame(true);
+	pPlayer->CheckInfractions();
 }
 
 void CPlayerManager::OnLateLoad()
@@ -568,11 +569,11 @@ ZEPlayer *CPlayerManager::GetPlayerFromUserId(uint16 userid)
 	return m_vecPlayers[index];
 }
 
-ZEPlayer* CPlayerManager::GetPlayerFromSteamId(uint64 steamid)
+ZEPlayer* CPlayerManager::GetPlayerFromSteamId(uint64 steamid, bool bIgnoreAuthentication)
 {
 	for (ZEPlayer* player : m_vecPlayers)
 	{
-		if (player && player->IsAuthenticated() && player->GetSteamId64() == steamid)
+		if (player && ((player->IsAuthenticated() && player->GetSteamId64() == steamid) || (bIgnoreAuthentication && player->GetUnauthenticatedSteamId64() == steamid)))
 			return player;
 	}
 
