@@ -38,7 +38,6 @@
 #include <ctime>
 #include <map>
 #include <memory>
-#include <sstream>
 #include <utility>
 #include "httpmanager.h"
 #include "vendor/nlohmann/json.hpp"
@@ -562,6 +561,15 @@ CON_COMMAND_CHAT_FLAGS(kick, "<name> - kick a player", ADMFLAG_KICK)
 	int iCommandPlayer = player ? player->GetPlayerSlot() : -1;
 	int iNumClients = 0;
 	int pSlot[MAXPLAYERS];
+	ENetworkDisconnectionReason dcReason = NETWORK_DISCONNECT_KICKED;
+	if (args.ArgC() > 2)
+	{
+		std::string strReason = args[2];
+		std::transform(strReason.begin(), strReason.end(), strReason.begin(),
+					   [](unsigned char c) { return std::tolower(c); });
+		if (strReason == "afk")
+			dcReason = NETWORK_DISCONNECT_KICKED_IDLE;
+	}
 
 	g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot);
 
@@ -582,7 +590,7 @@ CON_COMMAND_CHAT_FLAGS(kick, "<name> - kick a player", ADMFLAG_KICK)
 
 		ZEPlayer* pTargetPlayer = g_playerManager->GetPlayer(pSlot[i]);
 
-		g_pEngineServer2->DisconnectClient(pTargetPlayer->GetPlayerSlot(), NETWORK_DISCONNECT_KICKED);
+		g_pEngineServer2->DisconnectClient(pTargetPlayer->GetPlayerSlot(), dcReason);
 
 		PrintSingleAdminAction(pszCommandPlayerName, pTarget->GetPlayerName(), "kicked");
 	}
@@ -762,6 +770,57 @@ CON_COMMAND_CHAT_FLAGS(bring, "<name> - bring a player", ADMFLAG_SLAY)
 
 		if (nType < ETargetType::ALL)
 			PrintSingleAdminAction(player->GetPlayerName(), pTarget->GetPlayerName(), "brought");
+	}
+
+	PrintMultiAdminAction(nType, player->GetPlayerName(), "brought");
+}
+
+CON_COMMAND_CHAT_FLAGS(bringct, "<name> - bring a human", ADMFLAG_SLAY)
+{
+	if (!player)
+	{
+		ClientPrint(player, HUD_PRINTCONSOLE, CHAT_PREFIX "You cannot use this command from the server console.");
+		return;
+	}
+
+	if (args.ArgC() < 2)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !bringct <name>");
+		return;
+	}
+
+	int iNumClients = 0;
+	int pSlots[MAXPLAYERS];
+
+	ETargetType nType = g_playerManager->TargetPlayerString(player->GetPlayerSlot(), args[1], iNumClients, pSlots);
+
+	if (!iNumClients || nType == ETargetType::T || nType == ETargetType::RANDOM_T)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
+		return;
+	}
+
+	bool bTPedPlayer = false;
+	for (int i = 0; i < iNumClients; i++)
+	{
+		CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlots[i]);
+
+		if (!pTarget || pTarget->m_iTeamNum() != CS_TEAM_CT)
+			continue;
+
+		Vector newOrigin = player->GetPawn()->GetAbsOrigin();
+
+		pTarget->GetPawn()->Teleport(&newOrigin, nullptr, nullptr);
+		bTPedPlayer = true;
+
+		if (nType < ETargetType::ALL)
+			PrintSingleAdminAction(player->GetPlayerName(), pTarget->GetPlayerName(), "brought");
+	}
+
+	if (!bTPedPlayer)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
+		return;
 	}
 
 	PrintMultiAdminAction(nType, player->GetPlayerName(), "brought");
@@ -1413,80 +1472,69 @@ void CGagInfraction::UndoInfraction(ZEPlayer *player)
 // GFLBans Specific stuff (kept mostly seperate for easier merging with CS2Fixes public repo)
 //--------------------------------------------------------------------------------------------------
 
-#if 0
-CON_COMMAND_CHAT(status, "<name|Steam64 ID> - List a player's active punishments. Non-admins may only check their own punishments.")
+CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admins may only check their own punishments")
 {
 	int iCommandPlayer = player ? player->GetPlayerSlot() : -1;
-	int iNumClients = 1;
+	int iNumClients;
 	int pSlot[MAXPLAYERS];
-	std::string target = "";
 	ETargetType nType = ETargetType::PLAYER;
-	std::shared_ptr<GFLBans_PlayerObjIPOptional> gflPlayer;
 	ZEPlayer* pTargetPlayer = nullptr;
 	bool bIsAdmin = g_playerManager->GetPlayer(iCommandPlayer)->IsAdminFlagSet(ADMFLAG_CHAT | ADMFLAG_BAN);
+	std::string target = !bIsAdmin || args.ArgC() == 1 ? "" : args[1];
 
-	if (bIsAdmin && args.ArgC() > 1)
+	if (bIsAdmin && target.length() > 0)
 	{
 		iNumClients = 0;
 		target = args[1];
 		nType = g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot);
 	}
-
-	if (nType != ETargetType::PLAYER)
+	else
 	{
-	// Passed a Steam64ID or invalid name
-		std::string s = args[1];
-		if (s.empty() || s.length() != 17 ||
-			std::find_if(s.begin(), s.end(), [](unsigned char c) { return !std::isdigit(c); }) != s.end())
-		{
-			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Target not found.");
-			return;
-		}
-		gflPlayer = std::make_shared<GFLBans_PlayerObjIPOptional>(s);
-		target = "Steam64_" + target;
+		iNumClients = 1;
+		pSlot[0] = iCommandPlayer;
 	}
-	else if (iNumClients > 1)
+
+	if (iNumClients > 1)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You can only target individual players for listing punishments.");
 		return;
 	}
-	else if (!iNumClients)
+	else if (iNumClients <= 0)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Target not found.");
 		return;
 	}
-	else
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[0]);
+	if (!pTarget)
+		return;
+
+	pTargetPlayer = g_playerManager->GetPlayer(pSlot[0]);
+
+	if (pTargetPlayer->IsFakeClient())
+		return;
+
+	if (!pTargetPlayer->IsMuted() && !pTargetPlayer->IsGagged())
 	{
-	// Targets a single, online player
-		CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[0]);
-		if (!pTarget)
-			return;
-
-		pTargetPlayer = g_playerManager->GetPlayer(pSlot[0]);
-
-		if (pTargetPlayer->IsFakeClient())
-			return;
-
-		if (!pTargetPlayer->IsMuted() && !pTargetPlayer->IsGagged())
-		{
-			if (target.length() == 0)
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You have no active blocks");
-			else
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s has no active blocks", pTarget->GetPlayerName());
-			return;
-		}
-
-		uint64 iSteamID = pTargetPlayer->IsAuthenticated() ? pTargetPlayer->GetSteamId64() : pTargetPlayer->GetUnauthenticatedSteamId64();
-		gflPlayer = std::make_shared<GFLBans_PlayerObjIPOptional>(std::to_string(iSteamID), pTargetPlayer->GetIpAddress());
+		if (target.length() == 0)
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You have no active punishments.");
+		else
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s has no active punishments.", pTarget->GetPlayerName());
+		return;
 	}
 
+	std::shared_ptr<GFLBans_PlayerObjIPOptional> gflPlayer = std::make_shared<GFLBans_PlayerObjIPOptional>(pTargetPlayer);
+
 	if (gflPlayer->m_strGSID == "BOT")
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Bots cannot have punishments.");
 		return;
+	}
 
 	// Send the requests
 	std::string strURL = gflPlayer->GB_Query();
 #ifdef _DEBUG
-	Message((strURL + "\n").c_str());
+	Message(("Request URL: " + strURL + "\n").c_str());
 #endif
 	if (strURL.length() == 0)
 		return;
@@ -1494,15 +1542,26 @@ CON_COMMAND_CHAT(status, "<name|Steam64 ID> - List a player's active punishments
 	g_HTTPManager.GET(strURL.c_str(), [player, target, pTargetPlayer](HTTPRequestHandle request, json response)
 	{
 #ifdef _DEBUG
-		Message("listpunishments response: %s\n", response.dump().c_str());
+		Message("status response: %s\n", response.dump().c_str());
 #endif
+		std::string punishment = "";
+		if (pTargetPlayer->IsMuted() && pTargetPlayer->IsGagged())
+			punishment = "\2gagged\1 and \2muted\1";
+		else if (pTargetPlayer->IsMuted())
+			punishment = "\2muted\1";
+		else if (pTargetPlayer->IsGagged())
+			punishment = "\2gagged\1";
 
 		if (response.dump().length() < 5)
 		{
-			if (target.length() == 0)
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You have no active punishments.");
+			if (punishment.length() > 0)
+				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s %s until the map ends.",
+							target.length() == 0 ? "You are" : (target + " is").c_str(),
+							punishment.c_str());
 			else
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s has no active punishments.", target.c_str());
+				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s no active punishments.", 
+							target.length() == 0 ? "You have" : (target + " has").c_str());
+			
 			return;
 		}
 		
@@ -1510,26 +1569,26 @@ CON_COMMAND_CHAT(status, "<name|Steam64 ID> - List a player's active punishments
 			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Check console for punishment information.");
 		else
 		{
-			std::string punishment = "";
 			if (pTargetPlayer->IsMuted() && pTargetPlayer->IsGagged())
-				punishment = "gagged and muted";
+				punishment = "\2gagged\1 and \2muted\1";
 			else if (pTargetPlayer->IsMuted())
-				punishment = "muted";
+				punishment = "\2muted\1";
 			else if (pTargetPlayer->IsGagged())
-				punishment = "gagged";
+				punishment = "\2gagged\1";
 
-			if (target.length() == 0)
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You are currently %s. Check console for more information", punishment.c_str());
-			else
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s is currently %s. Check console for more information", target.c_str(), punishment.c_str());
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s currently %s. Check console for more information.",
+						target.length() == 0 ? "You are" : (target + " is").c_str(),
+						punishment.c_str());
 		}
 
-		ClientPrint(player, HUD_PRINTCONSOLE, "[CS2Fixes] Active punishments for %s:", (target).c_str());
+		if (target.length() == 0)
+			ClientPrint(player, HUD_PRINTCONSOLE, "[GFLBans] Your active punishments:");
+		else
+			ClientPrint(player, HUD_PRINTCONSOLE, "[GFLBans] Active punishments for %s:", (target).c_str());
 
 		ConsoleListPunishments(player, response);
 	}, g_pAdminSystem->m_rghdGFLBansAuth);
 }
-#endif
 
 CON_COMMAND_CHAT_FLAGS(listdc, "- List recently disconnected players and their Steam64 IDs", ADMFLAG_CHAT | ADMFLAG_BAN)
 {
@@ -2580,9 +2639,9 @@ void ConsoleListPunishments(CCSPlayerController* const player, json punishments)
 			strPunishmentType = punishment.key();
 
 		if (wExpiration <= 0)
-			strPunishmentType = "\tPermanently " + strPunishmentType;
+			strPunishmentType = "Permanently " + strPunishmentType + ":";
 		else
-			strPunishmentType = "\t" + strPunishmentType + " for " + FormatTime(wExpiration - std::time(nullptr)) + ":";
+			strPunishmentType = strPunishmentType + " for " + FormatTime(wExpiration - std::time(nullptr)) + ":";
 
 		ClientPrint(player, HUD_PRINTCONSOLE, strPunishmentType.c_str());
 
@@ -2592,14 +2651,13 @@ void ConsoleListPunishments(CCSPlayerController* const player, json punishments)
 			if (val.key() == "expiration")
 				continue;
 			else if (val.key() == "admin_name")
-				desc = "\t\tAdmin: ";
+				desc = "\tAdmin: ";
 			else if (val.key() == "reason")
-				desc = "\t\tReason: ";
+				desc = "\tReason: ";
 			else
-				desc = "\t\t" + val.key() + ": ";
-			std::stringstream temp;
-			temp << val.value();
-			desc.append(temp.str().substr(1, temp.str().length() - 2));
+				desc = "\t" + val.key() + ": ";
+			std::string temp = val.value().dump();
+			desc.append(temp.substr(1, temp.length() - 2));
 
 			ClientPrint(player, HUD_PRINTCONSOLE, desc.c_str());
 		}
