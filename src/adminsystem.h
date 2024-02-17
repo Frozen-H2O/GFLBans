@@ -22,7 +22,7 @@
 #include "utlvector.h"
 #include "playermanager.h"
 #include <ctime>
-#include "KeyValues.h"
+#include "ctimer.h"
 #include "entity/ccsplayercontroller.h"
 #include <string>
 #include <memory>
@@ -269,6 +269,7 @@ class CAdminSystem
 public:
 	// When was the last time a heartbeat occured
 	std::time_t m_wLastHeartbeat;
+	std::map<uint64, std::pair<std::shared_ptr<GFLBans_Report>, CTimerBase*>> mapPendingReports;
 
 	CAdminSystem();
 

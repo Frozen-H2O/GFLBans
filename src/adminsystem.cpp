@@ -123,7 +123,7 @@ CON_COMMAND_CHAT_FLAGS(ban, "<name> <duration> <reason> - ban a player", ADMFLAG
 	int iNumClients = 0;
 	int pSlot[MAXPLAYERS];
 
-	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) != ETargetType::PLAYER || iNumClients > 1)
+	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) > ETargetType::PLAYER || iNumClients > 1)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You can only target individual players for banning.");
 		return;
@@ -1483,7 +1483,7 @@ static std::vector<HTTPHeader>* g_rghdGFLBansAuth = new std::vector<HTTPHeader>{
 // if a report was sent 1 minute ago with a cooldown of 600 seconds, but a new report is sent with a
 // 20 second cooldown, the new report will be successfull. So for an emergency report that you need
 // to force through, set this to 1, send the report, then change it back to the original value
-static int g_iGFLBansReportCooldown = 600; 
+static int g_iGFLBansReportCooldown = 600;
 
 FAKE_STRING_CVAR(gflbans_api_url, "URL to interact with GFLBans API. Should end in \"api/v1/\"", g_strGFLBansApiUrl, false)
 FAKE_STRING_CVAR(gflbans_hostname, "Name of the server", g_strGFLBansHostname, false) // remove once we can read hostname convar
@@ -1524,7 +1524,7 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 {
 	if (args.ArgC() < 3)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !report <name> <reason>");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: /report <name> <reason>");
 		return;
 	}
 
@@ -1533,12 +1533,19 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "A calling player is required by GFLBans, so you may not report through console. Use \"c_info <name>\" to find their information instead.");
 		return;
 	}
+	
+	ZEPlayer* ply = player->GetZEPlayer();
+	if (!ply->IsAuthenticated())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You are not authenticated yet. Please wait a bit and try again.");
+		return;
+	}
 
 	int iCommandPlayer = player->GetPlayerSlot();
 	int iNumClients = 0;
 	int pSlot[MAXPLAYERS];
 
-	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) != ETargetType::PLAYER || iNumClients > 1)
+	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) > ETargetType::PLAYER || iNumClients > 1)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You can only report individual players.");
 		return;
@@ -1566,7 +1573,7 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 		return;
 	}
 
-	if (player->GetZEPlayer() == pTargetPlayer)
+	if (ply == pTargetPlayer)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You may not report yourself, consider using !calladmin instead.");
 		return;
@@ -1579,7 +1586,7 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 	}
 
 	std::shared_ptr<GFLBans_PlayerObjNoIp> plyBadPerson = std::make_shared<GFLBans_PlayerObjNoIp>(pTargetPlayer);
-	std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
+	std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller = std::make_shared<GFLBans_PlayerObjNoIp>(ply);
 	std::string strMessage = "";
 	for (int i = 2; i < args.ArgC(); i++)
 		strMessage = strMessage + args[i] + " ";
@@ -1590,16 +1597,60 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You must provide a reason for reporting.");
 		return;
 	}
+	
+	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Type \x0E/confirm\1 within 30 seconds to send your pending report. Issuing false reports will result in a\x02 ban\1.");
+	uint64 reportIndex = ply->GetSteamId64();
+	if (g_pAdminSystem->mapPendingReports.find(reportIndex) != g_pAdminSystem->mapPendingReports.end())
+	{
+		for (int i = g_timers.Tail(); i != g_timers.InvalidIndex();)
+		{
+			auto timer = g_timers[i];
 
-	GFLBans_Report report(plyCaller, player->GetPlayerName(), strMessage, plyBadPerson, pTarget->GetPlayerName());
-	report.GFLBans_CallAdmin(player);
+			int prevIndex = i;
+			i = g_timers.Previous(i);
+
+			// Delete existing timer
+			if (timer == g_pAdminSystem->mapPendingReports[reportIndex].second)
+			{
+				delete timer;
+				g_timers.Remove(prevIndex);
+				break;
+			}
+		}
+	}
+
+	int iCommandPlayerSlot = player->GetPlayerSlot();
+	CTimerBase* timer = new CTimer(30.0f, true, [reportIndex, iCommandPlayerSlot]() {
+		auto player = CCSPlayerController::FromSlot(iCommandPlayerSlot);
+		if (g_pAdminSystem->mapPendingReports.find(reportIndex) != g_pAdminSystem->mapPendingReports.end())
+		{
+			g_pAdminSystem->mapPendingReports.erase(reportIndex);
+		#if _DEBUG
+			Message("Deleted a report/admin call");
+		#endif
+			if (!player)
+				return -1.0f;
+
+			ZEPlayer* ply = player->GetZEPlayer();
+
+			if (!ply || ply->IsFakeClient())
+				return -1.0f;
+
+			if (ply->GetSteamId64() == reportIndex)
+				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Your admin call has been cancelled due to not using \x0E/confirm\1 within 30 seconds.");
+		}
+		return -1.0f;
+	});
+
+	g_pAdminSystem->mapPendingReports[reportIndex] = std::make_pair(std::make_shared<GFLBans_Report>(plyCaller, player->GetPlayerName(), strMessage, plyBadPerson, pTarget->GetPlayerName()),
+																	timer);
 }
 
 CON_COMMAND_CHAT(calladmin, "<reason> - request for an admin to join the server")
 {
 	if (args.ArgC() < 2)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !calladmin <reason>");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: /calladmin <reason>");
 		return;
 	}
 
@@ -1609,7 +1660,14 @@ CON_COMMAND_CHAT(calladmin, "<reason> - request for an admin to join the server"
 		return;
 	}
 
-	std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
+	ZEPlayer* ply = player->GetZEPlayer();
+	if (!ply->IsAuthenticated())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You are not authenticated yet. Please wait a bit and try again.");
+		return;
+	}
+
+	std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller = std::make_shared<GFLBans_PlayerObjNoIp>(ply);
 	std::string strMessage = "";
 	for (int i = 1; i < args.ArgC(); i++)
 		strMessage = strMessage + args[i] + " ";
@@ -1621,8 +1679,95 @@ CON_COMMAND_CHAT(calladmin, "<reason> - request for an admin to join the server"
 		return;
 	}
 
-	GFLBans_Report report(plyCaller, player->GetPlayerName(), strMessage);
-	report.GFLBans_CallAdmin(player);
+	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Type \x0E/confirm\1 within 30 seconds to send your pending admin call. Abusing this feature will result in a\x02 ban\1.");
+	uint64 reportIndex = ply->GetSteamId64();
+	if (g_pAdminSystem->mapPendingReports.find(reportIndex) != g_pAdminSystem->mapPendingReports.end())
+	{
+		for (int i = g_timers.Tail(); i != g_timers.InvalidIndex();)
+		{
+			auto timer = g_timers[i];
+
+			int prevIndex = i;
+			i = g_timers.Previous(i);
+
+			// Delete existing timer
+			if (timer == g_pAdminSystem->mapPendingReports[reportIndex].second)
+			{
+				delete timer;
+				g_timers.Remove(prevIndex);
+				break;
+			}
+		}
+	}
+
+	int iCommandPlayerSlot = player->GetPlayerSlot();
+	CTimerBase* timer = new CTimer(30.0f, true, [reportIndex, iCommandPlayerSlot]() {
+		auto player = CCSPlayerController::FromSlot(iCommandPlayerSlot);
+		if (g_pAdminSystem->mapPendingReports.find(reportIndex) != g_pAdminSystem->mapPendingReports.end())
+		{
+			g_pAdminSystem->mapPendingReports.erase(reportIndex);
+#if _DEBUG
+			Message("Deleted a report/admin call");
+#endif
+			if (!player)
+				return -1.0f;
+
+			ZEPlayer* ply = player->GetZEPlayer();
+
+			if (!ply || ply->IsFakeClient())
+				return -1.0f;
+
+			if (ply->GetSteamId64() == reportIndex)
+				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Your admin call has been cancelled due to not using \x0E/confirm\1 within 30 seconds.");
+		}
+		return -1.0f;
+	});
+
+	g_pAdminSystem->mapPendingReports[reportIndex] = std::make_pair(std::make_shared<GFLBans_Report>(plyCaller, player->GetPlayerName(), strMessage),
+																	timer);
+}
+
+CON_COMMAND_CHAT(confirm, "- send a report or admin call that you attempted to send within the last 30 seconds")
+{
+	if (!player)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "A calling player is required by GFLBans, so reports can not be sent through console.");
+		return;
+	}
+
+	ZEPlayer* ply = player->GetZEPlayer();
+
+	if (!ply->IsAuthenticated())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You are not authenticated yet. Please wait a bit and try again.");
+		return;
+	}
+
+	if (g_pAdminSystem->mapPendingReports.find(ply->GetSteamId64()) == g_pAdminSystem->mapPendingReports.end())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You do not have any pending reports or admin calls. Please create one with \x02/report\1 or \x02/calladmin\1 before using \x0E/confirm\1");
+		return;
+	}
+
+	for (int i = g_timers.Tail(); i != g_timers.InvalidIndex();)
+	{
+		auto timer = g_timers[i];
+
+		int prevIndex = i;
+		i = g_timers.Previous(i);
+
+		// Delete existing timer
+		if (timer == g_pAdminSystem->mapPendingReports[ply->GetSteamId64()].second)
+		{
+			delete timer;
+			g_timers.Remove(prevIndex);
+			break;
+		}
+	}
+
+	std::shared_ptr<GFLBans_Report> report = g_pAdminSystem->mapPendingReports[ply->GetSteamId64()].first;
+	g_pAdminSystem->mapPendingReports.erase(ply->GetSteamId64());
+	report->GFLBans_CallAdmin(player);
 }
 
 CON_COMMAND_CHAT_FLAGS(claim, "- claims the most recent GFLBans report/calladmin query", ADMFLAG_KICK)
@@ -2117,6 +2262,8 @@ void GFLBans_Report::GFLBans_CallAdmin(CCSPlayerController* pCaller)
 	#ifdef _DEBUG
 		Message(("Report/CallAdmin Response:\n" + response.dump(1) + "\n").c_str());
 	#endif
+		if (!pCaller)
+			return;
 
 		if (!response.value("sent", false))
 		{
@@ -2570,11 +2717,7 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 		{
 			strPunishment = " is not " + strPunishment + ".";
 			strPunishment = CCSPlayerController::FromSlot(plyBadPerson->GetPlayerSlot())->GetPlayerName() + strPunishment;
-			if (pAdmin)
-				ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "%s", strPunishment.c_str());
-			else
-				Message(strPunishment.c_str());
-
+			ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "%s", strPunishment.c_str());
 			return;
 		}
 
