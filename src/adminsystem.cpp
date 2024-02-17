@@ -1472,6 +1472,203 @@ void CGagInfraction::UndoInfraction(ZEPlayer *player)
 // GFLBans Specific stuff (kept mostly seperate for easier merging with CS2Fixes public repo)
 //--------------------------------------------------------------------------------------------------
 
+static std::string g_strGFLBansApiUrl = "https://bans.aurora.vg/api/v1/";
+static bool g_bGFLBansAllServers = true;
+static int g_iMinOfflineDurations = 61;
+static std::string g_strGFLBansHostname = "CS2 ZE Test";
+static std::string g_strGFLBansServerID = "999";
+static std::string g_strGFLBansServerKey = "1337";
+static std::vector<HTTPHeader>* g_rghdGFLBansAuth = new std::vector<HTTPHeader>{HTTPHeader("Authorization", "SERVER " + g_strGFLBansServerID + " " + g_strGFLBansServerKey)};
+// This only affects the CURRENT report being sent and is not logged in GFLBans. This means that
+// if a report was sent 1 minute ago with a cooldown of 600 seconds, but a new report is sent with a
+// 20 second cooldown, the new report will be successfull. So for an emergency report that you need
+// to force through, set this to 1, send the report, then change it back to the original value
+static int g_iGFLBansReportCooldown = 600; 
+
+FAKE_STRING_CVAR(gflbans_api_url, "URL to interact with GFLBans API. Should end in \"api/v1/\"", g_strGFLBansApiUrl, false)
+FAKE_STRING_CVAR(gflbans_hostname, "Name of the server", g_strGFLBansHostname, false) // remove once we can read hostname convar
+FAKE_BOOL_CVAR(gflbans_include_other_servers, "Enables checking punishments from other GFL servers", g_bGFLBansAllServers, true, false)
+FAKE_INT_CVAR(gflbans_min_offline_punish_duration, "Minimum amount of minutes for a mute/gag duration to tick down while client is disconnected. 0 or negative values force all punishments Online Only", g_iMinOfflineDurations, 61, false)
+FAKE_INT_CVAR(gflbans_report_cooldown, "Minimum amount of seconds between !report/!calladmin usages. Minimum of 1 second.", g_iGFLBansReportCooldown, 600, false)
+
+//These need to update g_rghdGFLBansAuth when changed, but otherwise work just like a fake cvar as if they weren't commented out:
+// FAKE_STRING_CVAR(gflbans_server_id, "GFLBans ID for the server. DO NOT LEAK THIS", g_strGFLBansServerID, true)
+CON_COMMAND_F(gflbans_server_id, "GFLBans ID for the server. DO NOT LEAK THIS", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY | FCVAR_PROTECTED)
+{
+	if (args.ArgC() < 2)
+	{
+		Msg("%s %s\n", args[0], g_strGFLBansServerID.c_str());
+		return;
+	}
+
+	g_strGFLBansServerID = args[1];
+	g_rghdGFLBansAuth->clear();
+	g_rghdGFLBansAuth->push_back(HTTPHeader("Authorization", "SERVER " + g_strGFLBansServerID + " " + g_strGFLBansServerKey));
+}
+
+// FAKE_STRING_CVAR(gflbans_server_key, "GFLBans KEY for the server. DO NOT LEAK THIS", g_strGFLBansServerKey, true)
+CON_COMMAND_F(gflbans_server_key, "GFLBans KEY for the server. DO NOT LEAK THIS", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY | FCVAR_PROTECTED)
+{
+	if (args.ArgC() < 2)
+	{
+		Msg("%s %s\n", args[0], g_strGFLBansServerKey.c_str());
+		return;
+	}
+
+	g_strGFLBansServerKey = args[1];
+	g_rghdGFLBansAuth->clear();
+	g_rghdGFLBansAuth->push_back(HTTPHeader("Authorization", "SERVER " + g_strGFLBansServerID + " " + g_strGFLBansServerKey));
+}
+
+CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
+{
+	if (args.ArgC() < 3)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !report <name> <reason>");
+		return;
+	}
+
+	if (!player)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "A calling player is required by GFLBans, so you may not report through console. Use \"c_info <name>\" to find their information instead.");
+		return;
+	}
+
+	int iCommandPlayer = player->GetPlayerSlot();
+	int iNumClients = 0;
+	int pSlot[MAXPLAYERS];
+
+	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) != ETargetType::PLAYER || iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You can only report individual players.");
+		return;
+	}
+
+	if (!iNumClients)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Player not found.");
+		return;
+	}
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[0]);
+
+	if (!pTarget)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Target not found.");
+		return;
+	}
+
+	ZEPlayer* pTargetPlayer = g_playerManager->GetPlayer(pSlot[0]);
+
+	if (pTargetPlayer->IsFakeClient())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You may not report bots, consider using !calladmin instead.");
+		return;
+	}
+
+	if (player->GetZEPlayer() == pTargetPlayer)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You may not report yourself, consider using !calladmin instead.");
+		return;
+	}
+
+	if (!pTargetPlayer->IsAuthenticated())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s is not yet authenticated with Steam, please wait a bit and then try again or use !calladmin instead.", pTarget->GetPlayerName());
+		return;
+	}
+
+	std::shared_ptr<GFLBans_PlayerObjNoIp> plyBadPerson = std::make_shared<GFLBans_PlayerObjNoIp>(pTargetPlayer);
+	std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
+	std::string strMessage = "";
+	for (int i = 2; i < args.ArgC(); i++)
+		strMessage = strMessage + args[i] + " ";
+	if (strMessage.length() > 0)
+		strMessage = strMessage.substr(0, strMessage.length() - 1);
+	else
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You must provide a reason for reporting.");
+		return;
+	}
+
+	GFLBans_Report report(plyCaller, player->GetPlayerName(), strMessage, plyBadPerson, pTarget->GetPlayerName());
+	report.GFLBans_CallAdmin(player);
+}
+
+CON_COMMAND_CHAT(calladmin, "<reason> - request for an admin to join the server")
+{
+	if (args.ArgC() < 2)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !calladmin <reason>");
+		return;
+	}
+
+	if (!player)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "A calling player is required by GFLBans, so you may not call admins through console.");
+		return;
+	}
+
+	std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
+	std::string strMessage = "";
+	for (int i = 1; i < args.ArgC(); i++)
+		strMessage = strMessage + args[i] + " ";
+	if (strMessage.length() > 0)
+		strMessage = strMessage.substr(0, strMessage.length() - 1);
+	else
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You must provide a reason for calling an admin.");
+		return;
+	}
+
+	GFLBans_Report report(plyCaller, player->GetPlayerName(), strMessage);
+	report.GFLBans_CallAdmin(player);
+}
+
+CON_COMMAND_CHAT_FLAGS(claim, "- claims the most recent GFLBans report/calladmin query", ADMFLAG_KICK)
+{
+	json jClaim;
+	jClaim["admin_name"] = player ? player->GetPlayerName() : "CONSOLE";
+
+	if (std::time(nullptr) - g_pAdminSystem->m_wLastHeartbeat > 120)
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "GFLBans is currently not responding. Your claim may fail.");
+
+#ifdef _DEBUG
+	Message(("Claim Query:\n" + g_strGFLBansApiUrl + "gs/calladmin/claim\n").c_str());
+	if (g_rghdGFLBansAuth != nullptr)
+	{
+		for (HTTPHeader header : *(g_rghdGFLBansAuth))
+		{
+			Message("Header - %s: %s\n", header.GetName(), header.GetValue());
+		}
+	}
+	Message((jClaim.dump(1) + "\n").c_str());
+#endif
+	g_HTTPManager.POST((g_strGFLBansApiUrl + "gs/calladmin/claim").c_str(),
+					   jClaim.dump().c_str(),
+					   [player](HTTPRequestHandle request, json response) {
+	#ifdef _DEBUG
+		Message(("Claim Response:\n" + response.dump(1) + "\n").c_str());
+	#endif
+
+		if (!response.value("success", false))
+		{
+			if (response.value("msg", "").length() > 0)
+				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s", response.value("msg", "").c_str());
+			else
+				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Claim request failed. Are you sure there is an open admin call?");
+		}
+		else
+		{
+			if (response.value("msg", "").length() > 0)
+				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s", response.value("msg", "").c_str());
+			else
+				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Successfully claimed an admin call.");
+		}
+
+	}, g_rghdGFLBansAuth);
+}
+
 CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admins may only check their own punishments")
 {
 	int iCommandPlayer = player ? player->GetPlayerSlot() : -1;
@@ -1555,7 +1752,7 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 		if (response.dump().length() < 5)
 		{
 			if (punishment.length() > 0)
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s %s until the map ends.",
+				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s %s.",
 							target.length() == 0 ? "You are" : (target + " is").c_str(),
 							punishment.c_str());
 			else
@@ -1587,7 +1784,7 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 			ClientPrint(player, HUD_PRINTCONSOLE, "[GFLBans] Active punishments for %s:", (target).c_str());
 
 		ConsoleListPunishments(player, response);
-	}, g_pAdminSystem->m_rghdGFLBansAuth);
+	}, g_rghdGFLBansAuth);
 }
 
 CON_COMMAND_CHAT_FLAGS(listdc, "- List recently disconnected players and their Steam64 IDs", ADMFLAG_CHAT | ADMFLAG_BAN)
@@ -1652,10 +1849,10 @@ inline std::string GFLBans_PlayerObjNoIp::GB_Query() const
 {
 	if (m_strGSID == "Bot")
 		return "";
-	else if (g_pAdminSystem->GFLBans_IsAllServers())
-		return g_pAdminSystem->GFLBans_GetURL() + "infractions/check?gs_service=steam&gs_id=" + m_strGSID;
+	else if (g_bGFLBansAllServers)
+		return g_strGFLBansApiUrl + "infractions/check?gs_service=steam&gs_id=" + m_strGSID;
 	else
-		return g_pAdminSystem->GFLBans_GetURL() + "infractions/check?gs_service=steam&gs_id=" + m_strGSID +
+		return g_strGFLBansApiUrl + "infractions/check?gs_service=steam&gs_id=" + m_strGSID +
 		"&include_other_servers=false";
 }
 
@@ -1695,12 +1892,12 @@ inline std::string GFLBans_PlayerObjIPOptional::GB_Query() const
 		return strURL;
 
 	if (strURL.length() == 0)
-		strURL = g_pAdminSystem->GFLBans_GetURL() + "infractions/check?ip=";
+		strURL = g_strGFLBansApiUrl + "infractions/check?ip=";
 	else
 		strURL.append("&ip=");
 
 	strURL.append(m_strIP);
-	if (!g_pAdminSystem->GFLBans_IsAllServers())
+	if (!g_bGFLBansAllServers)
 		strURL.append("&include_other_servers=false");
 
 	return strURL;
@@ -1730,7 +1927,7 @@ GFLBans_Infraction::GFLBans_Infraction(std::shared_ptr<GFLBans_PlayerObjSimple> 
 	m_wCreated = std::time(nullptr);
 	m_wExpires = m_wCreated + (iDuration * 60);
 
-	m_gisScope = g_pAdminSystem->GFLBans_IsAllServers() ? Global : Server;
+	m_gisScope = g_bGFLBansAllServers ? Global : Server;
 }
 
 inline bool GFLBans_Infraction::IsSession() const noexcept
@@ -1802,15 +1999,6 @@ json GFLBans_Infraction::CreateInfractionJSON() const
 	return jRequestBody;
 }
 
-GFLBans_RemoveInfractionsOfPlayer::GFLBans_RemoveInfractionsOfPlayer(std::shared_ptr<GFLBans_PlayerObjSimple> plyBadPerson,
-																	 GFLInfractionType gitType,
-																	 std::string strReason,
-																	 std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin) :
-	GFLBans_InfractionBase(plyBadPerson, gitType, strReason, plyAdmin)
-{
-	m_bIncludeOtherServers = g_pAdminSystem->GFLBans_IsAllServers();
-}
-
 json GFLBans_RemoveInfractionsOfPlayer::CreateInfractionJSON() const
 {
 	json jRequestBody;
@@ -1827,7 +2015,8 @@ json GFLBans_RemoveInfractionsOfPlayer::CreateInfractionJSON() const
 	}
 
 	//Omit for default true
-	jRequestBody["include_other_servers"] = m_bIncludeOtherServers;
+	if (!g_bGFLBansAllServers)
+		jRequestBody["include_other_servers"] = g_bGFLBansAllServers;
 
 	json jPunishments;
 	switch (m_gitType)
@@ -1857,124 +2046,105 @@ json GFLBans_RemoveInfractionsOfPlayer::CreateInfractionJSON() const
 	return jRequestBody;
 }
 
+GFLBans_Report::GFLBans_Report(std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller, std::string strCallerName,
+							   std::string strMessage, std::shared_ptr<GFLBans_PlayerObjNoIp> plyBadPerson,
+							   std::string strBadPersonName) :
+	m_plyCaller(plyCaller), m_strCallerName(strCallerName),
+	m_plyBadPerson(plyBadPerson), m_strBadPersonName(strBadPersonName)
+{
+	m_strMessage = strMessage.length() == 0 ? "No reason provided" :
+		strMessage.length() <= 120 ? strMessage : strMessage.substr(0, 120);
+}
+
+json GFLBans_Report::CreateReportJSON() const
+{
+	json jRequestBody;
+
+	jRequestBody["caller"] = m_plyCaller->CreateInfractionJSON();
+	jRequestBody["caller_name"] = m_strCallerName;
+
+	// Omit for false
+	if (g_bGFLBansAllServers)
+		jRequestBody["include_other_servers"] = true;
+
+	jRequestBody["message"] = m_strMessage;
+
+	// Omit for 10 minutes
+	if (g_iGFLBansReportCooldown != 600 && g_iGFLBansReportCooldown >= 0)
+		jRequestBody["cooldown"] = g_iGFLBansReportCooldown;
+
+	// Omit for generic call admin (no target of report)
+	if (m_plyBadPerson != nullptr)
+	{
+		jRequestBody["report_target"] = m_plyBadPerson->CreateInfractionJSON();
+		jRequestBody["report_target_name"] = m_strBadPersonName;
+	}
+
+	return jRequestBody;
+}
+
+inline bool GFLBans_Report::IsReport() const noexcept
+{
+	return m_plyBadPerson != nullptr;
+}
+
+void GFLBans_Report::GFLBans_CallAdmin(CCSPlayerController* pCaller)
+{
+	if (!pCaller)
+		return;
+
+	// Pass this into callback function, so we know if the response is for a report or calladmin query
+	bool bIsReport = IsReport();
+
+	if (std::time(nullptr) - g_pAdminSystem->m_wLastHeartbeat > 120)
+		ClientPrint(pCaller, HUD_PRINTTALK, CHAT_PREFIX "GFLBans is currently not responding. Your %s may fail.",
+					bIsReport ? "report"  : "calladmin request");
+
+#ifdef _DEBUG
+	Message(("Report/CallAdmin Query:\n" + g_strGFLBansApiUrl + "gs/calladmin/\n").c_str());
+	if (g_rghdGFLBansAuth != nullptr)
+	{
+		for (HTTPHeader header : *(g_rghdGFLBansAuth))
+		{
+			Message("Header - %s: %s\n", header.GetName(), header.GetValue());
+		}
+	}
+	Message((CreateReportJSON().dump(1) + "\n").c_str());
+#endif
+	g_HTTPManager.POST((g_strGFLBansApiUrl + "gs/calladmin/").c_str(),
+					   CreateReportJSON().dump().c_str(),
+					   [pCaller, bIsReport](HTTPRequestHandle request, json response) {
+	#ifdef _DEBUG
+		Message(("Report/CallAdmin Response:\n" + response.dump(1) + "\n").c_str());
+	#endif
+
+		if (!response.value("sent", false))
+		{
+			if (response.value("is_banned", true))
+				ClientPrint(pCaller, HUD_PRINTTALK, CHAT_PREFIX "You are banned from using !report and !calladmin. Please check GFLBans for more information.");
+			else if (response.value("cooldown", 0) > 0)
+				ClientPrint(pCaller, HUD_PRINTTALK, CHAT_PREFIX "The %s command was used recently and is on cooldown for \2%s\1.",
+							bIsReport ? "report" : "calladmin", FormatTime(response.value("cooldown", 0)).c_str());
+			else
+				ClientPrint(pCaller, HUD_PRINTTALK, CHAT_PREFIX "Your %s failed to send. Please try again",
+							bIsReport ? "report" : "admin call");
+		}
+		else
+		{
+			ClientPrint(pCaller, HUD_PRINTTALK, CHAT_PREFIX "Your %s was sent. If an admin is available, they will help out as soon as possible.",
+						bIsReport ? "report" : "admin request");
+		}
+		
+	}, g_rghdGFLBansAuth);
+}
+
+
 CAdminSystem::CAdminSystem()
 {
 	LoadAdmins();
 
-	m_rghdGFLBansAuth = new std::vector<HTTPHeader>();
 	// Make sure other functions know no heartbeat yet (they check if it was at most 120 seconds ago)
 	m_wLastHeartbeat = std::time(nullptr) - 121;
-
-	KeyValues* pKV = new KeyValues("gflBans");
-	KeyValues::AutoDelete autoDelete(pKV);
-	const char* pszPath = "addons/cs2fixes/configs/gflbans.cfg";
-	/*Config format Example:
-	gflBans
-	{
-		"CSGO ZE TEST"
-		{
-			"HOSTNAME" "[GFLClan.com] CS2 Zombie Escape" //This is until we can metamod can read cs2 convars (hostname)
-			"SERVER_ID" "999"
-			"SERVER_KEY" "1337"
-			"SERVER_URL" "https://bans.gflclan.com/api/v1/"
-			"INCLUDE_OTHER_SERVERS" "true"
-			"PUNISH_OFFLINE_DURATION_MIN" "61" // Any mute/gag duration LOWER than this will be forced to be an Online Only duration. 0 or negative values force all punishments Online Only
-		}
-	}
-	*/
-
-	// These should get overwritten by properly setup configs
-	m_strHostname = "Test Server";
-	m_strGFLBansUrl = "https://bans.gflclan.com/api/v1/";
-	m_bGFLBansAllServers = true;
-	m_iMinOfflineDurations = 61;
-
-	if (!pKV->LoadFromFile(g_pFullFileSystem, pszPath))
-	{
-		Warning("Failed to load %s\n", pszPath);
-		//TODO: Create file here
-		m_rghdGFLBansAuth->push_back(HTTPHeader("Authorization", ""));
-	}
-	else
-	{
-		for (KeyValues* pKey = pKV->GetFirstSubKey(); pKey; pKey = pKey->GetNextKey())
-		{
-			const char* pszName = pKey->GetName();
-			const char* pszHostname = pKey->GetString("HOSTNAME", nullptr);
-			const char* pszID = pKey->GetString("SERVER_ID", nullptr);
-			const char* pszKey = pKey->GetString("SERVER_KEY", nullptr);
-			const char* pszURL = pKey->GetString("SERVER_URL", nullptr);
-			const char* pszOtherServers = pKey->GetString("INCLUDE_OTHER_SERVERS", nullptr);
-			const char* pszMinOfflinePunish = pKey->GetString("PUNISH_OFFLINE_DURATION_MIN", nullptr);
-
-			if (!pszHostname)
-			{
-				Warning("Server entry %s is missing 'HOSTNAME' key\n", pszHostname);
-			}
-			else
-			{
-				ConMsg(" - HOSTNAME %5s\n", pszHostname);
-				m_strHostname = pszHostname;
-			}
-
-			if (!pszURL)
-			{
-				Warning("Server entry %s is missing 'SERVER_URL' key\n", pszName);
-			}
-			else
-			{
-				ConMsg(" - SERVER_URL %5s\n", pszURL);
-				m_strGFLBansUrl = pszURL;
-			}
-
-			if (!pszOtherServers)
-			{
-				Warning("Server entry %s is missing 'INCLUDE_OTHER_SERVERS' key\n", pszName);
-			}
-			else
-			{
-				ConMsg(" - INCLUDE_OTHER_SERVERS %5s\n", pszOtherServers);
-				m_bGFLBansAllServers = (pszOtherServers[0] != 'f' &&
-										pszOtherServers[0] != 'F' &&
-										pszOtherServers[0] != '0');
-			}
-
-			if (!pszMinOfflinePunish)
-			{
-				Warning("Server entry %s is missing 'PUNISH_OFFLINE_DURATION_MIN' key\n", pszName);
-			}
-			else
-			{
-				ConMsg(" - INCLUDE_OTHER_SERVERS %5s\n", pszOtherServers);
-				m_iMinOfflineDurations = ParseTimeInput(pszMinOfflinePunish);
-			}
-
-			if (!pszID)
-			{
-				Warning("Server entry %s is missing 'SERVER_ID' key\n", pszName);
-				continue;
-			}
-
-			if (!pszKey)
-			{
-				Warning("Server entry %s is missing 'SERVER_KEY' key\n", pszName);
-				continue;
-			}
-
-			ConMsg("Loaded GFLBans Server %s\n", pszName);
-			std::string strHeader = "SERVER";
-
-			ConMsg(" - SERVER_ID %5s\n", pszID);
-			strHeader = strHeader + " " + pszID;
-
-			ConMsg(" - SERVER_KEY %5s\n", pszKey);
-			strHeader = strHeader + " " + pszKey;
-
-			m_rghdGFLBansAuth->push_back(HTTPHeader("Authorization", strHeader));
-
-			break;
-		}
-	}
 
 	// Fill out disconnected player list with empty objects which we overwrite as players leave
 	for (int i = 0; i < 20; i++)
@@ -2050,7 +2220,7 @@ bool CAdminSystem::GFLBans_Heartbeat()
 
 	// TODO: Properly implement when MM can read a convar's string value
 	//jHeartbeat["hostname"] = g_pCVar->GetConVar(g_pCVar->FindConVar("hostname"))->GetString();
-	jHeartbeat["hostname"] = m_strHostname;
+	jHeartbeat["hostname"] = g_strGFLBansHostname;
 
 	jHeartbeat["max_slots"] = gpGlobals->maxClients;
 
@@ -2069,9 +2239,9 @@ bool CAdminSystem::GFLBans_Heartbeat()
 	}
 	jHeartbeat["players"] = jPlayers;
 #ifdef _WIN32
-	jHeartbeat["operating_system"] = "Windows";
+	jHeartbeat["operating_system"] = "windows";
 #else
-	jHeartbeat["operating_system"] = "Linux";
+	jHeartbeat["operating_system"] = "linux";
 #endif
 	jHeartbeat["mod"] = "cs2"; // Should this be "cs2" or "csgo"?
 	jHeartbeat["map"] = gpGlobals->mapname.ToCStr();
@@ -2082,22 +2252,22 @@ bool CAdminSystem::GFLBans_Heartbeat()
 	//	jHeartbeat["locked"] = true;
 
 	// Omit for true
-	if (!g_pAdminSystem->GFLBans_IsAllServers())
+	if (!g_bGFLBansAllServers)
 		jHeartbeat["include_other_servers"] = false;
 
 #ifdef _DEBUG
-	if (m_rghdGFLBansAuth != nullptr)
+	if (g_rghdGFLBansAuth != nullptr)
 	{
-		for (HTTPHeader header : *m_rghdGFLBansAuth)
+		for (HTTPHeader header : *g_rghdGFLBansAuth)
 		{
 			Message("Heartbeat Header - %s: %s\n", header.GetName(), header.GetValue());
 		}
 	}
-	Message(("Heartbeat Query:\nURL: " + g_pAdminSystem->GFLBans_GetURL() +
+	Message(("Heartbeat Query:\nURL: " + g_strGFLBansApiUrl +
 			 "gs/heartbeat\nPOST JSON:\n" + jHeartbeat.dump(1) + "\n").c_str());
 #endif
 
-	g_HTTPManager.POST((g_pAdminSystem->GFLBans_GetURL() + "gs/heartbeat").c_str(), jHeartbeat.dump().c_str(),
+	g_HTTPManager.POST((g_strGFLBansApiUrl + "gs/heartbeat").c_str(), jHeartbeat.dump().c_str(),
 					   [](HTTPRequestHandle request, json response) {
 #ifdef _DEBUG
 		Message(("Heartbeat Response:\n" + response.dump(1) + "\n").c_str());
@@ -2137,7 +2307,7 @@ bool CAdminSystem::GFLBans_Heartbeat()
 			// We dont need to check to apply a Call Admin Block server side, since that is all handled by GFLBans itself
 			g_pAdminSystem->CheckJSONForBlock(pPlayer, jInfractions, GFLBans_InfractionBase::GFLInfractionType::Ban);
 		}
-	}, m_rghdGFLBansAuth);
+	}, g_rghdGFLBansAuth);
 	return true;
 }
 
@@ -2173,7 +2343,7 @@ void CAdminSystem::GFLBans_CheckPlayerInfractions(ZEPlayer* player)
 		g_pAdminSystem->CheckJSONForBlock(player, response, GFLBans_InfractionBase::GFLInfractionType::Ban, true, false);
 		//g_pAdminSystem->CheckJSONForBlock(player, response, GFLBans_InfractionBase::GFLInfractionType::AdminChatGag, true, false);
 		// We dont need to check to apply a Call Admin Block server side, since that is all handled by GFLBans itself
-	}, m_rghdGFLBansAuth);
+	}, g_rghdGFLBansAuth);
 }
 
 // https://github.com/GFLClan/sm_gflbans/wiki/Implementer's-Guide-to-the-GFLBans-API#old-style-infractions
@@ -2234,17 +2404,17 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 	}
 
 #ifdef _DEBUG
-	Message(("Create Infraction Query:\n" + g_pAdminSystem->GFLBans_GetURL() + "infractions/\n").c_str());
-	if (m_rghdGFLBansAuth != nullptr)
+	Message(("Create Infraction Query:\n" + g_strGFLBansApiUrl + "infractions/\n").c_str());
+	if (g_rghdGFLBansAuth != nullptr)
 	{
-		for (HTTPHeader header : *m_rghdGFLBansAuth)
+		for (HTTPHeader header : *g_rghdGFLBansAuth)
 		{
 			Message("Header - %s: %s\n", header.GetName(), header.GetValue());
 		}
 	}
 	Message((infPunishment->CreateInfractionJSON().dump(1) + "\n").c_str());
 #endif
-	g_HTTPManager.POST((g_pAdminSystem->GFLBans_GetURL() + "infractions/").c_str(),
+	g_HTTPManager.POST((g_strGFLBansApiUrl + "infractions/").c_str(),
 					   infPunishment->CreateInfractionJSON().dump().c_str(),
 					   [infPunishment, plyBadPerson, pAdmin](HTTPRequestHandle request, json response) {
 #ifdef _DEBUG
@@ -2310,7 +2480,7 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 		g_pAdminSystem->FindAndRemoveInfraction(plyBadPerson, infraction->GetType(), false);
 		g_pAdminSystem->AddInfraction(infraction);
 		infraction->ApplyInfraction(plyBadPerson);
-	}, m_rghdGFLBansAuth);
+	}, g_rghdGFLBansAuth);
 }
 
 // Send a POST request to GFLBans telling it to remove all blocks of a given type for a player
@@ -2339,17 +2509,17 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 	}
 
 #ifdef _DEBUG
-	Message(("Remove Infraction Query:\n" + g_pAdminSystem->GFLBans_GetURL() + "infractions/remove\n").c_str());
-	if (m_rghdGFLBansAuth != nullptr)
+	Message(("Remove Infraction Query:\n" + g_strGFLBansApiUrl + "infractions/remove\n").c_str());
+	if (g_rghdGFLBansAuth != nullptr)
 	{
-		for (HTTPHeader header : *m_rghdGFLBansAuth)
+		for (HTTPHeader header : *g_rghdGFLBansAuth)
 		{
 			Message("Header - %s: %s\n", header.GetName(), header.GetValue());
 		}
 	}
 	Message((infPunishment->CreateInfractionJSON().dump(1) + "\n").c_str());
 #endif
-	g_HTTPManager.POST((g_pAdminSystem->GFLBans_GetURL() + "infractions/remove").c_str(),
+	g_HTTPManager.POST((g_strGFLBansApiUrl + "infractions/remove").c_str(),
 					   infPunishment->CreateInfractionJSON().dump().c_str(),
 					   [infPunishment, plyBadPerson, pAdmin](HTTPRequestHandle request, json response) {
 
@@ -2417,7 +2587,7 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 							   strPunishment.c_str());
 
 		g_pAdminSystem->RemoveInfractionType(plyBadPerson, itypeToRemove, bRemoveGagAndMute);
-	}, m_rghdGFLBansAuth);
+	}, g_rghdGFLBansAuth);
 }
 
 void CAdminSystem::RemoveInfractionType(ZEPlayer* player, CInfractionBase::EInfractionType itypeToRemove, bool bRemoveGagAndMute)
@@ -2462,16 +2632,6 @@ void CAdminSystem::RemoveInfractionType(ZEPlayer* player, CInfractionBase::EInfr
 
 	// Check GFLBans for any other infractions on player and apply them if they exist
 	GFLBans_CheckPlayerInfractions(player);
-}
-
-inline std::string CAdminSystem::GFLBans_GetURL() const noexcept
-{
-	return m_strGFLBansUrl;
-}
-
-inline bool CAdminSystem::GFLBans_IsAllServers() const noexcept
-{
-	return m_bGFLBansAllServers;
 }
 
 bool CAdminSystem::CheckJSONForBlock(ZEPlayer* player, json jAllBlockInfo,
@@ -2611,7 +2771,7 @@ void CAdminSystem::ShowDisconnectedPlayers(CCSPlayerController* const pAdmin)
 
 inline bool CAdminSystem::CanPunishmentBeOffline(int iDuration) const noexcept
 {
-	return iDuration >= m_iMinOfflineDurations || m_iMinOfflineDurations <= 0;
+	return iDuration >= g_iMinOfflineDurations || g_iMinOfflineDurations <= 0;
 }
 
 

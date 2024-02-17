@@ -154,13 +154,32 @@ class GFLBans_RemoveInfractionsOfPlayer : public GFLBans_InfractionBase
 public:
 	GFLBans_RemoveInfractionsOfPlayer(std::shared_ptr<GFLBans_PlayerObjSimple> plyBadPerson,
 									  GFLInfractionType gitType, std::string strReason,
-									  std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr);
+									  std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr) :
+		GFLBans_InfractionBase(plyBadPerson, gitType, strReason, plyAdmin)
+	{}
 
 	// Creates a JSON object to pass in a POST request to GFLBans
 	virtual json CreateInfractionJSON() const override;
+};
 
-private:
-	bool m_bIncludeOtherServers;
+class GFLBans_Report
+{
+public:
+	GFLBans_Report(std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller, std::string strCallerName,
+				   std::string strMessage, std::shared_ptr<GFLBans_PlayerObjNoIp> plyBadPerson = nullptr,
+				   std::string strBadPersonName = "");
+
+	json CreateReportJSON() const;
+	bool IsReport() const noexcept;
+	void GFLBans_CallAdmin(CCSPlayerController* pCaller);
+	virtual ~GFLBans_Report() {}
+
+protected:
+	std::shared_ptr<GFLBans_PlayerObjNoIp> m_plyBadPerson;
+	std::string m_strBadPersonName;
+	std::shared_ptr<GFLBans_PlayerObjNoIp> m_plyCaller;
+	std::string m_strCallerName;
+	std::string m_strMessage;
 };
 
 class CInfractionBase
@@ -248,7 +267,8 @@ private:
 class CAdminSystem
 {
 public:
-	std::vector<HTTPHeader>* m_rghdGFLBansAuth;
+	// When was the last time a heartbeat occured
+	std::time_t m_wLastHeartbeat;
 
 	CAdminSystem();
 
@@ -289,9 +309,6 @@ public:
 	void RemoveInfractionType(ZEPlayer* player, CInfractionBase::EInfractionType itypeToRemove,
 							  bool  bRemoveGagAndMute);
 
-	std::string GFLBans_GetURL() const noexcept;
-	bool GFLBans_IsAllServers() const noexcept;
-
 	// If bApplyBlock, will attempt to apply block on the server if json contains one
 	// Return Values are based on if jAllBlockInfo contains a block, not if it was applied
 	bool CheckJSONForBlock(ZEPlayer* player, json jAllBlockInfo,
@@ -309,19 +326,9 @@ private:
 	CUtlVector<CAdmin> m_vecAdmins;
 	CUtlVector<CInfractionBase*> m_vecInfractions;
 
-	std::string m_strGFLBansUrl;
-	std::string m_strHostname;
-	bool m_bGFLBansAllServers;
-
 	// Implemented as a circular buffer. First in, first out, with random access
 	std::tuple<std::string, uint64, std::string> m_rgDCPly[20];
 	int m_iDCPlyIndex;
-
-	// The minimum amount of minutes for an admin to issue 
-	int m_iMinOfflineDurations;
-
-	// When was the last time a heartbeat occured
-	std::time_t m_wLastHeartbeat;
 };
 
 extern CAdminSystem *g_pAdminSystem;
