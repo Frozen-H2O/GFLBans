@@ -705,7 +705,7 @@ CON_COMMAND_CHAT_FLAGS(goto, "<name> - teleport to a player", ADMFLAG_SLAY)
 	int iNumClients = 0;
 	int pSlots[MAXPLAYERS];
 
-	if (g_playerManager->TargetPlayerString(player->GetPlayerSlot(), args[1], iNumClients, pSlots) != ETargetType::PLAYER || iNumClients > 1)
+	if (g_playerManager->TargetPlayerString(player->GetPlayerSlot(), args[1], iNumClients, pSlots) > ETargetType::PLAYER || iNumClients > 1)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target too ambiguous.");
 		return;
@@ -2470,8 +2470,6 @@ void CAdminSystem::GFLBans_CheckPlayerInfractions(ZEPlayer* player)
 	// We dont care if player is authenticated or not at this point.
 	// We are just fetching active punishments rather than applying anything new, so innocents
 	// cannot be hurt by someone faking a steamid here
-	std::string iSteamID = std::to_string(player->IsAuthenticated() ? player->GetSteamId64() : player->GetUnauthenticatedSteamId64());
-
 	GFLBans_PlayerObjIPOptional gflPlayer(player);
 
 	std::string strURL = gflPlayer.GB_Query();
@@ -2480,11 +2478,21 @@ void CAdminSystem::GFLBans_CheckPlayerInfractions(ZEPlayer* player)
 #endif
 	if (strURL.length() == 0)
 		return;
-
-	g_HTTPManager.GET(strURL.c_str(), [player](HTTPRequestHandle request, json response) {
+	uint64 iSteamID = player->IsAuthenticated() ? player->GetSteamId64() : player->GetUnauthenticatedSteamId64();
+	int iCommandPlayerSlot = player->GetPlayerSlot().Get();
+	g_HTTPManager.GET(strURL.c_str(), [iCommandPlayerSlot, iSteamID](HTTPRequestHandle request, json response) {
 #ifdef _DEBUG
 		Message(("Check Infraction Response:\n" + response.dump(1) + "\n").c_str());
 #endif
+		CCSPlayerController* ply = CCSPlayerController::FromSlot(iCommandPlayerSlot);
+		if (!ply)
+			return;
+
+		ZEPlayer* player = ply->GetZEPlayer();
+
+		if (!player || player->IsFakeClient() || player->IsAuthenticated() ? player->GetSteamId64() : player->GetUnauthenticatedSteamId64() != iSteamID)
+			return;
+
 		g_pAdminSystem->CheckJSONForBlock(player, response, GFLBans_InfractionBase::GFLInfractionType::Mute, true, false);
 		g_pAdminSystem->CheckJSONForBlock(player, response, GFLBans_InfractionBase::GFLInfractionType::Gag, true, false);
 		g_pAdminSystem->CheckJSONForBlock(player, response, GFLBans_InfractionBase::GFLInfractionType::Ban, true, false);
@@ -3033,7 +3041,7 @@ int ParseTimeInput(std::string strTime)
 			break;
 		case 'm':
 		case 'M':
-			return iDuration * 60.0 * 24.0 * 7.0 * 4.0 > INT_MAX ? 0 : iDuration * 60 * 24 * 7 * 4;
+			return iDuration * 60.0 * 24.0 * 30.0 > INT_MAX ? 0 : iDuration * 60 * 24 * 30;
 			break;
 		default:
 			return iDuration;
