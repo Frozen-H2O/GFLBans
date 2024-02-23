@@ -301,11 +301,11 @@ public:
 
 	// Send a POST request to GFLBans telling it to add a block for a player
 	void GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> infPunishment,
-								  ZEPlayer* plyBadPerson, CCSPlayerController* pAdmin);
+								  CCSPlayerController* pBadPerson, CCSPlayerController* pAdmin);
 
 	// Send a POST request to GFLBans telling it to remove all blocks of a given type for a player
 	void GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfractionsOfPlayer> infPunishment,
-								  ZEPlayer* plyBadPerson, CCSPlayerController* pAdmin);
+								  CCSPlayerController* pBadPerson, CCSPlayerController* pAdmin);
 
 	void RemoveInfractionType(ZEPlayer* player, CInfractionBase::EInfractionType itypeToRemove,
 							  bool  bRemoveGagAndMute);

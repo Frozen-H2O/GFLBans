@@ -37,6 +37,14 @@ extern IVEngineServer2* g_pEngineServer2;
 
 CMapVoteSystem* g_pMapVoteSystem = nullptr;
 
+bool g_bMuteDuringVote = false;
+bool g_bGagDuringVote = false;
+bool g_bAdminsIgnoreCommBlock = true;
+
+FAKE_BOOL_CVAR(cs2f_vote_mute, "Whether to mute non-admins during map votes", g_bMuteDuringVote, false, false)
+FAKE_BOOL_CVAR(cs2f_vote_gag, "Whether to gag non-admins during map votes", g_bGagDuringVote, false, false)
+FAKE_BOOL_CVAR(cs2f_vote_admin_ignore_block, "Whether admins ignore vote mutes/gags", g_bAdminsIgnoreCommBlock, true, false)
+
 CON_COMMAND_CHAT_FLAGS(reload_map_list, "- Reload map list", ADMFLAG_ROOT)
 {
 	if (!g_bVoteManagerEnable)
@@ -228,6 +236,39 @@ void CMapVoteSystem::StartVote()
 {
 	m_bIsVoteOngoing = true;
 
+	if (g_bMuteDuringVote || g_bGagDuringVote)
+	{
+		if (g_bMuteDuringVote && g_bGagDuringVote)
+			ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX "All players have been \2gagged\1 and \2muted\1 during the map vote.", "");
+		else if (g_bMuteDuringVote)
+			ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX "All players have been \2muted\1 during the map vote.", "");
+		else
+			ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX "All players have been \2gagged\1 during the map vote.", "");
+
+		for (int i = 0; i < gpGlobals->maxClients; i++)
+		{
+			ZEPlayer* pPlayer = g_playerManager->GetPlayer(i);
+
+			if (!pPlayer)
+				continue;
+
+			if (g_bAdminsIgnoreCommBlock && pPlayer->IsAdminFlagSet(ADMFLAG_GENERIC))
+			{
+				CCSPlayerController* pTemp = CCSPlayerController::FromSlot(pPlayer->GetPlayerSlot());
+				if (pTemp && !pPlayer->IsMuted())
+					ClientPrint(pTemp, HUD_PRINTTALK, CHAT_PREFIX "Admins may speak during the map vote. \2Do not influence the vote.");
+				continue;
+			}
+
+			//These should be reset on map change (at least in testing), so don't need to treat as a proper session punishment
+			if (g_bMuteDuringVote)
+				pPlayer->SetMuted(true);
+
+			if (g_bGagDuringVote)
+				pPlayer->SetGagged(true);
+		}
+	}
+	
 	// If we are forcing a map, just set all vote options to that map
 	if (m_iForcedNextMapIndex != -1) {
 		for (int i = 0; i < 10; i++) {

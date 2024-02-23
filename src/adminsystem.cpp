@@ -171,7 +171,7 @@ CON_COMMAND_CHAT_FLAGS(ban, "<name> <duration> <reason> - ban a player", ADMFLAG
 	std::shared_ptr<GFLBans_Infraction> infraction = std::make_shared<GFLBans_Infraction>(
 		plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Ban, strReason, plyAdmin, iDuration);
 
-	g_pAdminSystem->GFLBans_CreateInfraction(infraction, pTargetPlayer, player);
+	g_pAdminSystem->GFLBans_CreateInfraction(infraction, pTarget, player);
 }
 
 CON_COMMAND_CHAT_FLAGS(mute, "<name> <(+)duration> <reason> - mutes a player", ADMFLAG_CHAT)
@@ -276,7 +276,7 @@ CON_COMMAND_CHAT_FLAGS(mute, "<name> <(+)duration> <reason> - mutes a player", A
 			plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Mute, strReason, plyAdmin,
 			iDuration, bOnlineOnly);
 
-		g_pAdminSystem->GFLBans_CreateInfraction(infraction, pTargetPlayer, player);
+		g_pAdminSystem->GFLBans_CreateInfraction(infraction, pTarget, player);
 	}
 }
 
@@ -359,7 +359,7 @@ CON_COMMAND_CHAT_FLAGS(unmute, "<name> <reason> - unmutes a player", ADMFLAG_CHA
 		std::shared_ptr<GFLBans_RemoveInfractionsOfPlayer> infraction = std::make_shared<GFLBans_RemoveInfractionsOfPlayer>(
 			plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Mute, strReason, plyAdmin);
 
-		g_pAdminSystem->GFLBans_RemoveInfraction(infraction, pTargetPlayer, player);
+		g_pAdminSystem->GFLBans_RemoveInfraction(infraction, pTarget, player);
 	}
 }
 
@@ -463,7 +463,7 @@ CON_COMMAND_CHAT_FLAGS(gag, "<name> <(+)duration> <reason> - gag a player", ADMF
 			plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Gag, strReason, plyAdmin,
 			iDuration, bOnlineOnly);
 
-		g_pAdminSystem->GFLBans_CreateInfraction(infraction, pTargetPlayer, player);
+		g_pAdminSystem->GFLBans_CreateInfraction(infraction, pTarget, player);
 	}
 }
 
@@ -546,7 +546,7 @@ CON_COMMAND_CHAT_FLAGS(ungag, "<name> <reason> - ungags a player", ADMFLAG_CHAT)
 		std::shared_ptr<GFLBans_RemoveInfractionsOfPlayer> infraction = std::make_shared<GFLBans_RemoveInfractionsOfPlayer>(
 			plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Gag, strReason, plyAdmin);
 
-		g_pAdminSystem->GFLBans_RemoveInfraction(infraction, pTargetPlayer, player);
+		g_pAdminSystem->GFLBans_RemoveInfraction(infraction, pTarget, player);
 	}
 }
 
@@ -1153,6 +1153,77 @@ CON_COMMAND_CHAT_FLAGS(extend, "<minutes> - extend current map (negative value r
 		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "shortened map time %i minutes.", pszCommandPlayerName, iExtendTime * -1);
 	else
 		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "extended map time %i minutes.", pszCommandPlayerName, iExtendTime);
+}
+
+CON_COMMAND_CHAT(pm, "<name> <message> - Private message a player. This will also show to online admins")
+{
+	if (args.ArgC() < 2)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: /pm <name> <message>");
+		return;
+	}
+
+	if (player)
+	{
+		ZEPlayer* ply = player->GetZEPlayer();
+		if (!ply)
+			return;
+		if (ply->IsGagged())
+		{
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You may not private message players while gagged.");
+			return;
+		}
+	}
+
+	int iCommandPlayer = player ? player->GetPlayerSlot() : -1;
+	int iNumClients = 0;
+	int pSlot[MAXPLAYERS];
+
+	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) > ETargetType::SELF || iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You can only private message individual players.");
+		return;
+	}
+
+	if (!iNumClients)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Target not found.");
+		return;
+	}
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[0]);
+	if (!pTarget)
+		return;
+
+	ZEPlayer* pTargetPlayer = pTarget->GetZEPlayer();
+
+	std::string strMessage = args.ArgS();
+	int iToRemove = (std::string(args[1])).length();
+	strMessage = strMessage.substr(iToRemove, strMessage.length() - iToRemove);
+
+	const char* pszName = player ? player->GetPlayerName() : "CONSOLE";
+
+	if (player == pTarget)
+	{
+	//Player is PMing themselves (bind to display message in chat probably), so no need to echo to admins
+		ClientPrint(player, HUD_PRINTTALK, "\x0A[SELF]\x0C %s\1:\x0C%s", pszName, strMessage.c_str());
+		return;
+	}
+
+	for (int i = 0; i < gpGlobals->maxClients; i++)
+	{
+		ZEPlayer* pPlayer = g_playerManager->GetPlayer(i);
+
+		if (!pPlayer || pTargetPlayer == pPlayer)
+			continue;
+
+		if (pPlayer->IsAdminFlagSet(ADMFLAG_GENERIC) && CCSPlayerController::FromSlot(i) != player)
+			ClientPrint(CCSPlayerController::FromSlot(i), HUD_PRINTTALK, "\x0A[PM to %s]\x0C %s\1:\x0B%s", pTarget->GetPlayerName(), pszName, strMessage.c_str());
+	}
+
+	ClientPrint(player, HUD_PRINTTALK, "\x0A[PM to %s]\x0C %s\1:\x0B%s", pTarget->GetPlayerName(), pszName, strMessage.c_str());
+	ClientPrint(pTarget, HUD_PRINTTALK, "\x0A[PM]\x0C %s\1:\x0B%s", pszName, strMessage.c_str());
+	Message("[PM to %s] %s: %s\n", pTarget->GetPlayerName(), pszName, strMessage.c_str());
 }
 
 void PrecacheAdminBeaconParticle(IEntityResourceManifest* pResourceManifest)
@@ -1778,6 +1849,8 @@ CON_COMMAND_CHAT_FLAGS(claim, "- claims the most recent GFLBans report/calladmin
 	if (std::time(nullptr) - g_pAdminSystem->m_wLastHeartbeat > 120)
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "GFLBans is currently not responding. Your claim may fail.");
 
+	CHandle<CCSPlayerController> hPlayer = player->GetHandle();
+
 #ifdef _DEBUG
 	Message(("Claim Query:\n" + g_strGFLBansApiUrl + "gs/calladmin/claim\n").c_str());
 	if (g_rghdGFLBansAuth != nullptr)
@@ -1791,10 +1864,15 @@ CON_COMMAND_CHAT_FLAGS(claim, "- claims the most recent GFLBans report/calladmin
 #endif
 	g_HTTPManager.POST((g_strGFLBansApiUrl + "gs/calladmin/claim").c_str(),
 					   jClaim.dump().c_str(),
-					   [player](HTTPRequestHandle request, json response) {
+					   [hPlayer](HTTPRequestHandle request, json response) {
 	#ifdef _DEBUG
 		Message(("Claim Response:\n" + response.dump(1) + "\n").c_str());
 	#endif
+
+		CCSPlayerController* player = hPlayer.Get();
+
+		if (!player)
+			return;
 
 		if (!response.value("success", false))
 		{
@@ -2245,6 +2323,9 @@ void GFLBans_Report::GFLBans_CallAdmin(CCSPlayerController* pCaller)
 		ClientPrint(pCaller, HUD_PRINTTALK, CHAT_PREFIX "GFLBans is currently not responding. Your %s may fail.",
 					bIsReport ? "report"  : "calladmin request");
 
+
+	CHandle<CCSPlayerController> hCaller = pCaller->GetHandle();
+
 #ifdef _DEBUG
 	Message(("Report/CallAdmin Query:\n" + g_strGFLBansApiUrl + "gs/calladmin/\n").c_str());
 	if (g_rghdGFLBansAuth != nullptr)
@@ -2258,10 +2339,13 @@ void GFLBans_Report::GFLBans_CallAdmin(CCSPlayerController* pCaller)
 #endif
 	g_HTTPManager.POST((g_strGFLBansApiUrl + "gs/calladmin/").c_str(),
 					   CreateReportJSON().dump().c_str(),
-					   [pCaller, bIsReport](HTTPRequestHandle request, json response) {
+					   [hCaller, bIsReport](HTTPRequestHandle request, json response) {
 	#ifdef _DEBUG
 		Message(("Report/CallAdmin Response:\n" + response.dump(1) + "\n").c_str());
 	#endif
+
+		CCSPlayerController* pCaller = hCaller.Get();
+
 		if (!pCaller)
 			return;
 
@@ -2478,19 +2562,23 @@ void CAdminSystem::GFLBans_CheckPlayerInfractions(ZEPlayer* player)
 #endif
 	if (strURL.length() == 0)
 		return;
-	uint64 iSteamID = player->IsAuthenticated() ? player->GetSteamId64() : player->GetUnauthenticatedSteamId64();
-	int iCommandPlayerSlot = player->GetPlayerSlot().Get();
-	g_HTTPManager.GET(strURL.c_str(), [iCommandPlayerSlot, iSteamID](HTTPRequestHandle request, json response) {
+
+	CCSPlayerController* pPlayer = CCSPlayerController::FromSlot(player->GetPlayerSlot());
+	if (!pPlayer)
+		return;
+
+	CHandle<CCSPlayerController> hPlayer = pPlayer->GetHandle();
+
+	g_HTTPManager.GET(strURL.c_str(), [hPlayer](HTTPRequestHandle request, json response) {
 #ifdef _DEBUG
 		Message(("Check Infraction Response:\n" + response.dump(1) + "\n").c_str());
 #endif
-		CCSPlayerController* ply = CCSPlayerController::FromSlot(iCommandPlayerSlot);
-		if (!ply)
+		CCSPlayerController* pPlayer = hPlayer.Get();
+		if (!pPlayer)
 			return;
 
-		ZEPlayer* player = ply->GetZEPlayer();
-
-		if (!player || player->IsFakeClient() || player->IsAuthenticated() ? player->GetSteamId64() : player->GetUnauthenticatedSteamId64() != iSteamID)
+		ZEPlayer* player = pPlayer->GetZEPlayer();
+		if (!player || player->IsFakeClient())
 			return;
 
 		g_pAdminSystem->CheckJSONForBlock(player, response, GFLBans_InfractionBase::GFLInfractionType::Mute, true, false);
@@ -2503,11 +2591,20 @@ void CAdminSystem::GFLBans_CheckPlayerInfractions(ZEPlayer* player)
 
 // https://github.com/GFLClan/sm_gflbans/wiki/Implementer's-Guide-to-the-GFLBans-API#old-style-infractions
 void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> infPunishment,
-											ZEPlayer* plyBadPerson, CCSPlayerController* pAdmin)
+											CCSPlayerController* pBadPerson, CCSPlayerController* pAdmin)
 {
-	if (!plyBadPerson || plyBadPerson->IsFakeClient() || !plyBadPerson->IsAuthenticated())
+	if (!pBadPerson || !pAdmin)
+		return;
+
+	ZEPlayer* plyBadPerson = pBadPerson->GetZEPlayer();
+	if (!plyBadPerson || plyBadPerson->IsFakeClient())
 	{
 		ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "The player is not on the server...");
+		return;
+	}
+	else if (!plyBadPerson->IsAuthenticated())
+	{
+		ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "The player is not authenticated, please wait a bit and try again later.");
 		return;
 	}
 
@@ -2558,6 +2655,9 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 		infraction->ApplyInfraction(plyBadPerson);
 	}
 
+	CHandle<CCSPlayerController> hBadPerson = pBadPerson->GetHandle();
+	CHandle<CCSPlayerController> hAdmin = pAdmin->GetHandle();
+
 #ifdef _DEBUG
 	Message(("Create Infraction Query:\n" + g_strGFLBansApiUrl + "infractions/\n").c_str());
 	if (g_rghdGFLBansAuth != nullptr)
@@ -2571,7 +2671,7 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 #endif
 	g_HTTPManager.POST((g_strGFLBansApiUrl + "infractions/").c_str(),
 					   infPunishment->CreateInfractionJSON().dump().c_str(),
-					   [infPunishment, plyBadPerson, pAdmin](HTTPRequestHandle request, json response) {
+					   [infPunishment, hBadPerson, hAdmin](HTTPRequestHandle request, json response) {
 #ifdef _DEBUG
 		Message(("Create Infraction Response:\n" + response.dump(1) + "\n").c_str());
 #endif
@@ -2579,10 +2679,17 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 		// Session punishments don't care about response, since GFLBans instantly expires them
 			return;
 
+		CCSPlayerController* pBadPerson = hBadPerson.Get();
+		CCSPlayerController* pAdmin = hAdmin.Get();
+
+		if (!pAdmin || !pBadPerson)
+			return;
+
+		ZEPlayer* plyBadPerson = pBadPerson->GetZEPlayer();
 		if (!plyBadPerson || plyBadPerson->IsFakeClient() || !plyBadPerson->IsAuthenticated())
 		{
-			// This should only be hit if the player disconnected in the time between the query
-			// being sent and GFLBans responding to the query
+		// This should only be hit if the player disconnected in the time between the query
+		// being sent and GFLBans responding to the query
 			ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "The player is not on the server...");
 			return;
 		}
@@ -2641,8 +2748,23 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 // Send a POST request to GFLBans telling it to remove all blocks of a given type for a player
 // https://github.com/GFLClan/sm_gflbans/wiki/Implementer's-Guide-to-the-GFLBans-API#removing-infractions
 void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfractionsOfPlayer> infPunishment,
-											ZEPlayer* plyBadPerson, CCSPlayerController* pAdmin)
+											CCSPlayerController* pBadPerson, CCSPlayerController* pAdmin)
 {
+	if (!pBadPerson || !pAdmin)
+		return;
+
+	ZEPlayer* plyBadPerson = pBadPerson->GetZEPlayer();
+	if (!plyBadPerson || plyBadPerson->IsFakeClient())
+	{
+		ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "The player is not on the server...");
+		return;
+	}
+	else if (!plyBadPerson->IsAuthenticated())
+	{
+		ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "The player is not authenticated, please wait a bit and try again later.");
+		return;
+	}
+
 	if (std::time(nullptr) - m_wLastHeartbeat > 120)
 	{
 	//GFLBans has not responded for 2+ heartbeats. Remove punishment on server, but it will be
@@ -2663,6 +2785,9 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 			ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "Local block removed, but \2GFLBans is currently down\1. Any web blocks will be reapplied when GFLBans comes back online.");
 	}
 
+	CHandle<CCSPlayerController> hBadPerson = pBadPerson->GetHandle();
+	CHandle<CCSPlayerController> hAdmin = pAdmin->GetHandle();
+
 #ifdef _DEBUG
 	Message(("Remove Infraction Query:\n" + g_strGFLBansApiUrl + "infractions/remove\n").c_str());
 	if (g_rghdGFLBansAuth != nullptr)
@@ -2676,14 +2801,19 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 #endif
 	g_HTTPManager.POST((g_strGFLBansApiUrl + "infractions/remove").c_str(),
 					   infPunishment->CreateInfractionJSON().dump().c_str(),
-					   [infPunishment, plyBadPerson, pAdmin](HTTPRequestHandle request, json response) {
+					   [infPunishment, hBadPerson, hAdmin](HTTPRequestHandle request, json response) {
 
 #ifdef _DEBUG
 		Message(("Remove Infraction Response:\n" + response.dump(1) + "\n").c_str());
 #endif
-		int iRemovedBlocks = response.value("num_removed", 0);
+		CCSPlayerController* pBadPerson = hBadPerson.Get();
+		CCSPlayerController* pAdmin = hAdmin.Get();
 
-		if (!plyBadPerson)
+		if (!pBadPerson || !pAdmin)
+			return;
+
+		ZEPlayer* plyBadPerson = pBadPerson->GetZEPlayer();
+		if (!plyBadPerson || plyBadPerson->IsFakeClient())
 		{
 		// This should only be hit if the player disconnected in the time between the query being sent
 		// and GFLBans responding to the query
@@ -3030,19 +3160,15 @@ int ParseTimeInput(std::string strTime)
 		case 'h':
 		case 'H':
 			return iDuration * 60.0 > INT_MAX ? 0 : iDuration * 60;
-			break;
 		case 'd':
 		case 'D':
 			return iDuration * 60.0 * 24.0 > INT_MAX ? 0 : iDuration * 60 * 24;
-			break;
 		case 'w':
 		case 'W':
 			return iDuration * 60.0 * 24.0 * 7.0 > INT_MAX ? 0 : iDuration * 60 * 24 * 7;
-			break;
 		case 'm':
 		case 'M':
 			return iDuration * 60.0 * 24.0 * 30.0 > INT_MAX ? 0 : iDuration * 60 * 24 * 30;
-			break;
 		default:
 			return iDuration;
 	}
