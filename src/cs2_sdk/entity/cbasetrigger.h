@@ -19,20 +19,22 @@
 
 #pragma once
 
-#include "cbaseentity.h"
-#include "globaltypes.h"
+#include "cbasemodelentity.h"
+#include"../schema.h"
 
-class CBaseModelEntity : public Z_CBaseEntity
+#define SF_TRIG_PUSH_ONCE 0x80
+
+class CBaseTrigger : public CBaseModelEntity
 {
 public:
-	DECLARE_SCHEMA_CLASS(CBaseModelEntity);
+	DECLARE_SCHEMA_CLASS(CBaseTrigger);
 
-	SCHEMA_FIELD(CCollisionProperty , m_Collision)
-	SCHEMA_FIELD(CGlowProperty, m_Glow)
-	SCHEMA_FIELD(Color, m_clrRender)
-	
-	void SetModel(const char *szModel)
+	SCHEMA_FIELD(CUtlSymbolLarge, m_iFilterName)
+	SCHEMA_FIELD(CEntityHandle, m_hFilter)
+
+	bool PassesTriggerFilters(Z_CBaseEntity *pOther)
 	{
-		addresses::CBaseModelEntity_SetModel(this, szModel);
+		static int offset = g_GameConfig->GetOffset("PassesTriggerFilters");
+		return CALL_VIRTUAL(bool, offset, this, pOther);
 	}
 };

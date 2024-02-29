@@ -20,19 +20,14 @@
 #pragma once
 
 #include "cbaseentity.h"
-#include "globaltypes.h"
+#include"../schema.h"
 
-class CBaseModelEntity : public Z_CBaseEntity
+#define SF_TRIG_PUSH_ONCE 0x80
+
+class CEnvEntityMaker : public Z_CBaseEntity
 {
 public:
-	DECLARE_SCHEMA_CLASS(CBaseModelEntity);
+	DECLARE_SCHEMA_CLASS(CEnvEntityMaker);
 
-	SCHEMA_FIELD(CCollisionProperty , m_Collision)
-	SCHEMA_FIELD(CGlowProperty, m_Glow)
-	SCHEMA_FIELD(Color, m_clrRender)
-	
-	void SetModel(const char *szModel)
-	{
-		addresses::CBaseModelEntity_SetModel(this, szModel);
-	}
+	SCHEMA_FIELD(CUtlSymbolLarge, m_iszTemplate)
 };

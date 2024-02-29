@@ -1,7 +1,7 @@
-/**
+﻿/**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023 Source2ZE
+ * Copyright (C) 2023-2024 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -16,6 +16,8 @@
  * You should have received a copy of the GNU General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+#include "networkbasetypes.pb.h"
 
 #include "cdetour.h"
 #include "common.h"
@@ -37,6 +39,9 @@
 #include "igameevents.h"
 #include "gameconfig.h"
 #include "zombiereborn.h"
+#include "customio.h"
+#include "serversideclient.h"
+#include "networksystem/inetworkserializer.h"
 
 #define VPROF_ENABLED
 #include "tier0/vprof.h"
@@ -59,6 +64,8 @@ DECLARE_DETOUR(CCSPlayer_WeaponServices_CanUse, Detour_CCSPlayer_WeaponServices_
 DECLARE_DETOUR(CEntityIdentity_AcceptInput, Detour_CEntityIdentity_AcceptInput);
 DECLARE_DETOUR(CNavMesh_GetNearestNavArea, Detour_CNavMesh_GetNearestNavArea);
 DECLARE_DETOUR(FixLagCompEntityRelationship, Detour_FixLagCompEntityRelationship);
+DECLARE_DETOUR(SendNetMessage, Detour_SendNetMessage);
+DECLARE_DETOUR(HostStateRequest, Detour_HostStateRequest);
 
 void FASTCALL Detour_CGameRules_Constructor(CGameRules *pThis)
 {
@@ -125,7 +132,7 @@ void FASTCALL Detour_TriggerPush_Touch(CTriggerPush* pPush, Z_CBaseEntity* pOthe
 		return;
 	}
 
-	MoveType_t movetype = pOther->m_MoveType();
+	MoveType_t movetype = pOther->m_nActualMoveType();
 
 	// VPhysics handling doesn't need any changes
 	if (movetype == MOVETYPE_VPHYSICS)
@@ -388,10 +395,21 @@ bool FASTCALL Detour_CCSPlayer_WeaponServices_CanUse(CCSPlayer_WeaponServices *p
 	return CCSPlayer_WeaponServices_CanUse(pWeaponServices, pPlayerWeapon);
 }
 
-void FASTCALL Detour_CEntityIdentity_AcceptInput(CEntityIdentity* pThis, CUtlSymbolLarge* pInputName, CEntityInstance* pActivator, CEntityInstance* pCaller, variant_t* value, int nOutputID)
+bool FASTCALL Detour_CEntityIdentity_AcceptInput(CEntityIdentity* pThis, CUtlSymbolLarge* pInputName, CEntityInstance* pActivator, CEntityInstance* pCaller, variant_t* value, int nOutputID)
 {
 	if (g_bEnableZR)
 		ZR_Detour_CEntityIdentity_AcceptInput(pThis, pInputName, pActivator, pCaller, value, nOutputID);
+
+    if (!V_strcasecmp(pInputName->String(), "KeyValues"))
+    {
+        if ((value->m_type == FIELD_CSTRING || value->m_type == FIELD_STRING) && value->m_pszString)
+        {
+            // always const char*, even if it's FIELD_STRING (that is bug string from lua 'EntFire')
+            return CustomIO_HandleInput(pThis->m_pInstance, value->m_pszString, pActivator, pCaller);
+        }
+        Message("Invalid value type for input %s\n", pInputName->String());
+        return false;
+    }
 
 	return CEntityIdentity_AcceptInput(pThis, pInputName, pActivator, pCaller, value, nOutputID);
 }
@@ -418,6 +436,51 @@ void FASTCALL Detour_FixLagCompEntityRelationship(void *a1, CEntityInstance *pEn
 		return;
 
 	return FixLagCompEntityRelationship(a1, pEntity, a3);
+}
+
+std::string g_sExtraAddon;
+FAKE_STRING_CVAR(cs2f_extra_addon, "The workshop ID of an extra addon to mount and send to clients", g_sExtraAddon, false);
+
+void *FASTCALL Detour_HostStateRequest(void *a1, void **pRequest)
+{
+	// skip if we're doing anything other than changelevel
+	if (g_sExtraAddon.empty() || V_strnicmp((char *)pRequest[2], "changelevel", 11))
+		return HostStateRequest(a1, pRequest);
+
+	// This offset hasn't changed in 6 years so it should be safe
+	CUtlString *sAddonString = (CUtlString*)(pRequest + 11);
+
+	// addons are simply comma-delimited, can have any number of them
+	if (!sAddonString->IsEmpty())
+		sAddonString->Format("%s,%s", sAddonString->Get(), g_sExtraAddon.c_str());
+	else
+		sAddonString->Set(g_sExtraAddon.c_str());
+
+	return HostStateRequest(a1, pRequest);
+}
+
+extern double g_flUniversalTime;
+
+void FASTCALL Detour_SendNetMessage(INetChannel *pNetChan, INetworkSerializable *pNetMessage, void *pData, int a4)
+{
+	NetMessageInfo_t *info = pNetMessage->GetNetMessageInfo();
+
+	// 7 for signon messages
+	if (info->m_MessageId != 7 || g_sExtraAddon.empty())
+		return SendNetMessage(pNetChan, pNetMessage, pData, a4);
+
+	ClientJoinInfo_t *pPendingClient = GetPendingClient(pNetChan);
+
+	if (pPendingClient)
+	{
+		Message("Detour_SendNetMessage: Sending addon %s to client %lli\n", g_sExtraAddon.c_str(), pPendingClient->steamid);
+		CNETMsg_SignonState *pMsg = (CNETMsg_SignonState *)pData;
+		pMsg->set_addons(g_sExtraAddon.c_str());
+		pMsg->set_signon_state(SIGNONSTATE_CHANGELEVEL);
+		pPendingClient->signon_timestamp = g_flUniversalTime;
+	}
+
+	SendNetMessage(pNetChan, pNetMessage, pData, a4);
 }
 
 CUtlVector<CDetourBase *> g_vecDetours;
@@ -477,6 +540,14 @@ bool InitDetours(CGameConfig *gameConfig)
 	if (!FixLagCompEntityRelationship.CreateDetour(gameConfig))
 		success = false;
 	FixLagCompEntityRelationship.EnableDetour();
+
+	if (!SendNetMessage.CreateDetour(gameConfig))
+		success = false;
+	SendNetMessage.EnableDetour();
+
+	if (!HostStateRequest.CreateDetour(gameConfig))
+		success = false;
+	HostStateRequest.EnableDetour();
 
 	return success;
 }

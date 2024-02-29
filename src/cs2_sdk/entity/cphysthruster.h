@@ -19,20 +19,16 @@
 
 #pragma once
 
+#include "../schema.h"
 #include "cbaseentity.h"
-#include "globaltypes.h"
 
-class CBaseModelEntity : public Z_CBaseEntity
+class CPhysForce : public Z_CBaseEntity
 {
+	DECLARE_SCHEMA_CLASS(CPhysForce)
 public:
-	DECLARE_SCHEMA_CLASS(CBaseModelEntity);
+	SCHEMA_FIELD(float, m_force)
+};
 
-	SCHEMA_FIELD(CCollisionProperty , m_Collision)
-	SCHEMA_FIELD(CGlowProperty, m_Glow)
-	SCHEMA_FIELD(Color, m_clrRender)
-	
-	void SetModel(const char *szModel)
-	{
-		addresses::CBaseModelEntity_SetModel(this, szModel);
-	}
+class CPhysThruster : public CPhysForce
+{
 };

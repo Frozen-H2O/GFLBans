@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023 Source2ZE
+ * Copyright (C) 2023-2024 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -29,6 +29,21 @@
 #define DECAL_PREF_KEY_NAME "hide_decals"
 #define HIDE_DISTANCE_PREF_KEY_NAME "hide_distance"
 #define SOUND_STATUS_PREF_KEY_NAME "sound_status"
+#define INVALID_ZEPLAYERHANDLE_INDEX 0u
+
+static uint32 iZEPlayerHandleSerial = 0u; // this should actually be 3 bytes large, but no way enough players join in servers lifespan for this to be an issue
+
+struct ClientJoinInfo_t
+{
+	uint64 steamid;
+	double signon_timestamp;
+};
+
+extern CUtlVector<ClientJoinInfo_t> g_ClientsPendingAddon;
+
+void AddPendingClient(uint64 steamid);
+ClientJoinInfo_t *GetPendingClient(uint64 steamid, int &index);
+ClientJoinInfo_t *GetPendingClient(INetChannel *pNetChan);
 
 enum class ETargetType {
 	NONE,
@@ -43,10 +58,49 @@ enum class ETargetType {
 	CT,
 };
 
+class ZEPlayer;
+
+class ZEPlayerHandle
+{
+public:
+	ZEPlayerHandle();
+	ZEPlayerHandle(CPlayerSlot slot); // used for initialization inside ZEPlayer constructor
+	ZEPlayerHandle(const ZEPlayerHandle& other);
+	ZEPlayerHandle(ZEPlayer *pZEPlayer);
+
+	bool IsValid() const { return static_cast<bool>(Get()); }
+
+	uint32 GetIndex() const { return m_Index; }
+	uint32 GetPlayerSlot() const { return m_Parts.m_PlayerSlot; }
+	uint32 GetSerial() const { return m_Parts.m_Serial; }
+
+	bool operator==(const ZEPlayerHandle &other) const { return other.m_Index == m_Index; }
+	bool operator!=(const ZEPlayerHandle &other) const { return other.m_Index != m_Index; }
+	bool operator==(ZEPlayer *pZEPlayer) const;
+	bool operator!=(ZEPlayer *pZEPlayer) const;
+
+	void operator=(const ZEPlayerHandle &other) { m_Index = other.m_Index; }
+	void operator=(ZEPlayer *pZEPlayer) { Set(pZEPlayer); }
+	void Set(ZEPlayer *pZEPlayer);
+	
+	ZEPlayer *Get() const;
+
+private:
+	union
+	{
+		uint32 m_Index;
+		struct
+		{
+			uint32 m_PlayerSlot : 6;
+			uint32 m_Serial : 26;
+		} m_Parts;
+	};
+};
+
 class ZEPlayer
 {
 public:
-	ZEPlayer(CPlayerSlot slot, bool m_bFakeClient = false): m_slot(slot), m_bFakeClient(m_bFakeClient)
+	ZEPlayer(CPlayerSlot slot, bool m_bFakeClient = false): m_slot(slot), m_bFakeClient(m_bFakeClient), m_Handle(slot)
 	{ 
 		m_bAuthenticated = false;
 		m_iAdminFlags = 0;
@@ -134,6 +188,7 @@ public:
 	float GetNominateTime() { return m_flNominateTime; }
 	CBarnLight *GetFlashLight() { return m_hFlashLight.Get(); }
 	CParticleSystem *GetBeaconParticle() { return m_hBeaconParticle.Get(); }
+	ZEPlayerHandle GetHandle() { return m_Handle; }
 	
 	void OnAuthenticated();
 	void CheckAdmin();
@@ -169,6 +224,7 @@ private:
 	float m_flNominateTime;
 	CHandle<CBarnLight> m_hFlashLight;
 	CHandle<CParticleSystem> m_hBeaconParticle;
+	ZEPlayerHandle m_Handle;
 };
 
 class CPlayerManager

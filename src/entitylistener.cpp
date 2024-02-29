@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023 Source2ZE
+ * Copyright (C) 2023-2024 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -40,7 +40,7 @@ void CEntityListener::OnEntitySpawned(CEntityInstance* pEntity)
 {
 #ifdef _DEBUG
 	const char* pszClassName = pEntity->m_pEntity->m_designerName.String();
-	Message("Entity spawned: %s\n", pszClassName);
+	Message("Entity spawned: %s %s\n", pszClassName, ((Z_CBaseEntity*)pEntity)->m_sUniqueHammerID().Get());
 #endif
 }
 

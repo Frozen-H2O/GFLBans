@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023 Source2ZE
+ * Copyright (C) 2023-2024 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -26,6 +26,7 @@
 #include "entity/ccsplayercontroller.h"
 #include "utils/entity.h"
 #include "ctimer.h"
+#include "serversideclient.h"
 #include "ctime"
 
 #define VPROF_ENABLED
@@ -37,6 +38,100 @@
 extern IVEngineServer2 *g_pEngineServer2;
 extern CGameEntitySystem *g_pEntitySystem;
 extern CGlobalVars *gpGlobals;
+extern INetworkGameServer *g_pNetworkGameServer;
+
+extern CUtlVector<CServerSideClient *> *GetClientList();
+
+CUtlVector<ClientJoinInfo_t> g_ClientsPendingAddon;
+
+void AddPendingClient(uint64 steamid)
+{
+	ClientJoinInfo_t PendingCLient {steamid, 0.f};
+	g_ClientsPendingAddon.AddToTail(PendingCLient);
+}
+
+ClientJoinInfo_t *GetPendingClient(uint64 steamid, int &index)
+{
+	index = 0;
+
+	FOR_EACH_VEC(g_ClientsPendingAddon, i)
+	{
+		if (g_ClientsPendingAddon[i].steamid == steamid)
+		{
+			index = i;
+			return &g_ClientsPendingAddon[i];
+		}
+	}
+
+	return nullptr;
+}
+
+ClientJoinInfo_t *GetPendingClient(INetChannel *pNetChan)
+{
+	CUtlVector<CServerSideClient *> *pClients = GetClientList();
+
+	if (!pClients)
+		return nullptr;
+
+	FOR_EACH_VEC(*pClients, i)
+	{
+		CServerSideClient *pClient = pClients->Element(i);
+
+		if (pClient && pClient->GetNetChannel() == pNetChan)
+			return GetPendingClient(pClient->GetClientSteamID()->ConvertToUint64(), i); // just pass i here, it's discarded anyway
+	}
+
+	return nullptr;
+}
+
+ZEPlayerHandle::ZEPlayerHandle() : m_Index(INVALID_ZEPLAYERHANDLE_INDEX) {};
+
+ZEPlayerHandle::ZEPlayerHandle(CPlayerSlot slot)
+{
+	m_Parts.m_PlayerSlot = slot.Get();
+	m_Parts.m_Serial = ++iZEPlayerHandleSerial;
+}
+
+ZEPlayerHandle::ZEPlayerHandle(const ZEPlayerHandle &other)
+{
+	m_Index = other.m_Index;
+}
+
+ZEPlayerHandle::ZEPlayerHandle(ZEPlayer *pZEPlayer)
+{
+	Set(pZEPlayer);
+}
+
+bool ZEPlayerHandle::operator==(ZEPlayer *pZEPlayer) const
+{
+	return Get() == pZEPlayer;
+}
+
+bool ZEPlayerHandle::operator!=(ZEPlayer *pZEPlayer) const
+{
+	return Get() != pZEPlayer;
+}
+
+void ZEPlayerHandle::Set(ZEPlayer *pZEPlayer)
+{
+	if (pZEPlayer)
+		m_Index = pZEPlayer->GetHandle().m_Index;
+	else
+		m_Index = INVALID_ZEPLAYERHANDLE_INDEX;
+}
+
+ZEPlayer *ZEPlayerHandle::Get() const
+{
+	ZEPlayer *pZEPlayer = g_playerManager->GetPlayer((CPlayerSlot) m_Parts.m_PlayerSlot);
+
+	if (!pZEPlayer)
+		return nullptr;
+	
+	if (pZEPlayer->GetHandle().m_Index != m_Index)
+		return nullptr;
+	
+	return pZEPlayer;
+}
 
 void ZEPlayer::OnAuthenticated()
 {
