@@ -163,10 +163,11 @@ CON_COMMAND_CHAT_FLAGS(ban, "<name> <duration> <reason> - ban a player", ADMFLAG
 	if (player)
 		plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
 	std::string strReason = "";
-	for (int i = 3; i < args.ArgC(); i++)
-		strReason = strReason + args[i] + " ";
-	if (strReason.length() > 0)
-		strReason = strReason.substr(0, strReason.length() - 1);
+	if (args.ArgC() > 3)
+	{
+		strReason = args.ArgS();
+		strReason = strReason.substr((std::string(args[1])).length() + 1 + (std::string(args[2])).length() + 1);
+	}
 
 	std::shared_ptr<GFLBans_Infraction> infraction = std::make_shared<GFLBans_Infraction>(
 		plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Ban, strReason, plyAdmin, iDuration);
@@ -264,10 +265,11 @@ CON_COMMAND_CHAT_FLAGS(mute, "<name> <(+)duration> <reason> - mutes a player", A
 			plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
 
 		std::string strReason = "";
-		for (int i = 3; i < args.ArgC(); i++)
-			strReason = strReason + args[i] + " ";
-		if (strReason.length() > 0)
-			strReason = strReason.substr(0, strReason.length() - 1);
+		if (args.ArgC() > 3)
+		{
+			strReason = args.ArgS();
+			strReason = strReason.substr((std::string(args[1])).length() + 1 + (std::string(args[2])).length() + 1);
+		}
 
 		bool bOnlineOnly = iDuration > 0 && (!g_pAdminSystem->CanPunishmentBeOffline(iDuration) || 
 											 args[2][0] == '+');
@@ -350,11 +352,13 @@ CON_COMMAND_CHAT_FLAGS(unmute, "<name> <reason> - unmutes a player", ADMFLAG_CHA
 		std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr;
 		if (player)
 			plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
+
 		std::string strReason = "";
-		for (int i = 2; i < args.ArgC(); i++)
-			strReason = strReason + args[i] + " ";
-		if (strReason.length() > 0)
-			strReason = strReason.substr(0, strReason.length() - 1);
+		if (args.ArgC() > 2)
+		{
+			strReason = args.ArgS();
+			strReason = strReason.substr((std::string(args[1])).length() + 1);
+		}
 
 		std::shared_ptr<GFLBans_RemoveInfractionsOfPlayer> infraction = std::make_shared<GFLBans_RemoveInfractionsOfPlayer>(
 			plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Mute, strReason, plyAdmin);
@@ -450,11 +454,13 @@ CON_COMMAND_CHAT_FLAGS(gag, "<name> <(+)duration> <reason> - gag a player", ADMF
 		std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr;
 		if (player)
 			plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
+		
 		std::string strReason = "";
-		for (int i = 3; i < args.ArgC(); i++)
-			strReason = strReason + args[i] + " ";
-		if (strReason.length() > 0)
-			strReason = strReason.substr(0, strReason.length() - 1);
+		if (args.ArgC() > 3)
+		{
+			strReason = args.ArgS();
+			strReason = strReason.substr((std::string(args[1])).length() + 1 + (std::string(args[2])).length() + 1);
+		}
 
 		bool bOnlineOnly = iDuration > 0 && (args[2][0] == '+' ||
 											 !g_pAdminSystem->CanPunishmentBeOffline(iDuration));
@@ -537,11 +543,13 @@ CON_COMMAND_CHAT_FLAGS(ungag, "<name> <reason> - ungags a player", ADMFLAG_CHAT)
 		std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr;
 		if (player)
 			plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
+		
 		std::string strReason = "";
-		for (int i = 2; i < args.ArgC(); i++)
-			strReason = strReason + args[i] + " ";
-		if (strReason.length() > 0)
-			strReason = strReason.substr(0, strReason.length() - 1);
+		if (args.ArgC() > 2)
+		{
+			strReason = args.ArgS();
+			strReason = strReason.substr((std::string(args[1])).length() + 1);
+		}
 
 		std::shared_ptr<GFLBans_RemoveInfractionsOfPlayer> infraction = std::make_shared<GFLBans_RemoveInfractionsOfPlayer>(
 			plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Gag, strReason, plyAdmin);
@@ -1157,7 +1165,7 @@ CON_COMMAND_CHAT_FLAGS(extend, "<minutes> - extend current map (negative value r
 
 CON_COMMAND_CHAT(pm, "<name> <message> - Private message a player. This will also show to online admins")
 {
-	if (args.ArgC() < 2)
+	if (args.ArgC() < 3)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: /pm <name> <message>");
 		return;
@@ -1198,15 +1206,14 @@ CON_COMMAND_CHAT(pm, "<name> <message> - Private message a player. This will als
 	ZEPlayer* pTargetPlayer = pTarget->GetZEPlayer();
 
 	std::string strMessage = args.ArgS();
-	int iToRemove = (std::string(args[1])).length();
-	strMessage = strMessage.substr(iToRemove, strMessage.length() - iToRemove);
+	strMessage = strMessage.substr((std::string(args[1])).length() + 1);
 
 	const char* pszName = player ? player->GetPlayerName() : "CONSOLE";
 
 	if (player == pTarget)
 	{
 	//Player is PMing themselves (bind to display message in chat probably), so no need to echo to admins
-		ClientPrint(player, HUD_PRINTTALK, "\x0A[SELF]\x0C %s\1:\x0C%s", pszName, strMessage.c_str());
+		ClientPrint(player, HUD_PRINTTALK, "\x0A[SELF]\x0C %s\1: \x0B%s", pszName, strMessage.c_str());
 		return;
 	}
 
@@ -1218,11 +1225,11 @@ CON_COMMAND_CHAT(pm, "<name> <message> - Private message a player. This will als
 			continue;
 
 		if (pPlayer->IsAdminFlagSet(ADMFLAG_GENERIC) && CCSPlayerController::FromSlot(i) != player)
-			ClientPrint(CCSPlayerController::FromSlot(i), HUD_PRINTTALK, "\x0A[PM to %s]\x0C %s\1:\x0B%s", pTarget->GetPlayerName(), pszName, strMessage.c_str());
+			ClientPrint(CCSPlayerController::FromSlot(i), HUD_PRINTTALK, "\x0A[PM to %s]\x0C %s\1: \x0B%s", pTarget->GetPlayerName(), pszName, strMessage.c_str());
 	}
 
-	ClientPrint(player, HUD_PRINTTALK, "\x0A[PM to %s]\x0C %s\1:\x0B%s", pTarget->GetPlayerName(), pszName, strMessage.c_str());
-	ClientPrint(pTarget, HUD_PRINTTALK, "\x0A[PM]\x0C %s\1:\x0B%s", pszName, strMessage.c_str());
+	ClientPrint(player, HUD_PRINTTALK, "\x0A[PM to %s]\x0C %s\1: \x0B%s", pTarget->GetPlayerName(), pszName, strMessage.c_str());
+	ClientPrint(pTarget, HUD_PRINTTALK, "\x0A[PM]\x0C %s\1: \x0B%s", pszName, strMessage.c_str());
 	Message("[PM to %s] %s: %s\n", pTarget->GetPlayerName(), pszName, strMessage.c_str());
 }
 
@@ -1640,30 +1647,28 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 
 	if (pTargetPlayer->IsFakeClient())
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You may not report bots, consider using !calladmin instead.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You may not report bots, consider using /calladmin instead.");
 		return;
 	}
 
 	if (ply == pTargetPlayer)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You may not report yourself, consider using !calladmin instead.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You may not report yourself, consider using /calladmin instead.");
 		return;
 	}
 
 	if (!pTargetPlayer->IsAuthenticated())
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s is not yet authenticated with Steam, please wait a bit and then try again or use !calladmin instead.", pTarget->GetPlayerName());
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s is not yet authenticated with Steam, please wait a bit and then try again or use /calladmin instead.", pTarget->GetPlayerName());
 		return;
 	}
 
 	std::shared_ptr<GFLBans_PlayerObjNoIp> plyBadPerson = std::make_shared<GFLBans_PlayerObjNoIp>(pTargetPlayer);
 	std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller = std::make_shared<GFLBans_PlayerObjNoIp>(ply);
-	std::string strMessage = "";
-	for (int i = 2; i < args.ArgC(); i++)
-		strMessage = strMessage + args[i] + " ";
-	if (strMessage.length() > 0)
-		strMessage = strMessage.substr(0, strMessage.length() - 1);
-	else
+	std::string strMessage = args.ArgS();
+	strMessage = strMessage.substr((std::string(args[1])).length() + 1 + (std::string(args[2])).length() + 1);
+	
+	if (strMessage.length() <= 0)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You must provide a reason for reporting.");
 		return;
@@ -1739,12 +1744,9 @@ CON_COMMAND_CHAT(calladmin, "<reason> - request for an admin to join the server"
 	}
 
 	std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller = std::make_shared<GFLBans_PlayerObjNoIp>(ply);
-	std::string strMessage = "";
-	for (int i = 1; i < args.ArgC(); i++)
-		strMessage = strMessage + args[i] + " ";
-	if (strMessage.length() > 0)
-		strMessage = strMessage.substr(0, strMessage.length() - 1);
-	else
+
+	std::string strMessage = args.ArgS();
+	if (strMessage.length() <= 0)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You must provide a reason for calling an admin.");
 		return;
@@ -2325,7 +2327,7 @@ void GFLBans_Report::GFLBans_CallAdmin(CCSPlayerController* pCaller)
 
 
 	CHandle<CCSPlayerController> hCaller = pCaller->GetHandle();
-
+	
 #ifdef _DEBUG
 	Message(("Report/CallAdmin Query:\n" + g_strGFLBansApiUrl + "gs/calladmin/\n").c_str());
 	if (g_rghdGFLBansAuth != nullptr)
