@@ -162,12 +162,7 @@ CON_COMMAND_CHAT_FLAGS(ban, "<name> <duration> <reason> - ban a player", ADMFLAG
 	std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr;
 	if (player)
 		plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
-	std::string strReason = "";
-	if (args.ArgC() > 3)
-	{
-		strReason = args.ArgS();
-		strReason = strReason.substr((std::string(args[1])).length() + 1 + (std::string(args[2])).length() + 1);
-	}
+	std::string strReason = GetReason(args, 2);
 
 	std::shared_ptr<GFLBans_Infraction> infraction = std::make_shared<GFLBans_Infraction>(
 		plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Ban, strReason, plyAdmin, iDuration);
@@ -264,12 +259,7 @@ CON_COMMAND_CHAT_FLAGS(mute, "<name> <(+)duration> <reason> - mutes a player", A
 		if (player)
 			plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
 
-		std::string strReason = "";
-		if (args.ArgC() > 3)
-		{
-			strReason = args.ArgS();
-			strReason = strReason.substr((std::string(args[1])).length() + 1 + (std::string(args[2])).length() + 1);
-		}
+		std::string strReason = GetReason(args, 2);
 
 		bool bOnlineOnly = iDuration > 0 && (!g_pAdminSystem->CanPunishmentBeOffline(iDuration) || 
 											 args[2][0] == '+');
@@ -353,12 +343,7 @@ CON_COMMAND_CHAT_FLAGS(unmute, "<name> <reason> - unmutes a player", ADMFLAG_CHA
 		if (player)
 			plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
 
-		std::string strReason = "";
-		if (args.ArgC() > 2)
-		{
-			strReason = args.ArgS();
-			strReason = strReason.substr((std::string(args[1])).length() + 1);
-		}
+		std::string strReason = GetReason(args, 1);
 
 		std::shared_ptr<GFLBans_RemoveInfractionsOfPlayer> infraction = std::make_shared<GFLBans_RemoveInfractionsOfPlayer>(
 			plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Mute, strReason, plyAdmin);
@@ -455,12 +440,7 @@ CON_COMMAND_CHAT_FLAGS(gag, "<name> <(+)duration> <reason> - gag a player", ADMF
 		if (player)
 			plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
 		
-		std::string strReason = "";
-		if (args.ArgC() > 3)
-		{
-			strReason = args.ArgS();
-			strReason = strReason.substr((std::string(args[1])).length() + 1 + (std::string(args[2])).length() + 1);
-		}
+		std::string strReason = GetReason(args, 2);
 
 		bool bOnlineOnly = iDuration > 0 && (args[2][0] == '+' ||
 											 !g_pAdminSystem->CanPunishmentBeOffline(iDuration));
@@ -544,12 +524,7 @@ CON_COMMAND_CHAT_FLAGS(ungag, "<name> <reason> - ungags a player", ADMFLAG_CHAT)
 		if (player)
 			plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
 		
-		std::string strReason = "";
-		if (args.ArgC() > 2)
-		{
-			strReason = args.ArgS();
-			strReason = strReason.substr((std::string(args[1])).length() + 1);
-		}
+		std::string strReason = GetReason(args, 1);
 
 		std::shared_ptr<GFLBans_RemoveInfractionsOfPlayer> infraction = std::make_shared<GFLBans_RemoveInfractionsOfPlayer>(
 			plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Gag, strReason, plyAdmin);
@@ -1205,8 +1180,7 @@ CON_COMMAND_CHAT(pm, "<name> <message> - Private message a player. This will als
 
 	ZEPlayer* pTargetPlayer = pTarget->GetZEPlayer();
 
-	std::string strMessage = args.ArgS();
-	strMessage = strMessage.substr((std::string(args[1])).length() + 1);
+	std::string strMessage = GetReason(args, 1);
 
 	const char* pszName = player ? player->GetPlayerName() : "CONSOLE";
 
@@ -1665,8 +1639,7 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 
 	std::shared_ptr<GFLBans_PlayerObjNoIp> plyBadPerson = std::make_shared<GFLBans_PlayerObjNoIp>(pTargetPlayer);
 	std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller = std::make_shared<GFLBans_PlayerObjNoIp>(ply);
-	std::string strMessage = args.ArgS();
-	strMessage = strMessage.substr((std::string(args[1])).length() + 1 + (std::string(args[2])).length() + 1);
+	std::string strMessage = GetReason(args, 1);
 	
 	if (strMessage.length() <= 0)
 	{
@@ -1745,7 +1718,7 @@ CON_COMMAND_CHAT(calladmin, "<reason> - request for an admin to join the server"
 
 	std::shared_ptr<GFLBans_PlayerObjNoIp> plyCaller = std::make_shared<GFLBans_PlayerObjNoIp>(ply);
 
-	std::string strMessage = args.ArgS();
+	std::string strMessage = GetReason(args, 0);
 	if (strMessage.length() <= 0)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You must provide a reason for calling an admin.");
@@ -2861,13 +2834,13 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 			return;
 		}
 
+		const char* pszCommandPlayerName = pAdmin ? pAdmin->GetPlayerName() : "Console";
+		strPunishment = "un" + strPunishment + " " + CCSPlayerController::FromSlot(plyBadPerson->GetPlayerSlot())->GetPlayerName();
+
 		if (infPunishment->GetReason() != "No reason provided")
 			strPunishment.append(" (\1reason: \x09" + infPunishment->GetReason() + "\1)");
-		
-		strPunishment = "un" + strPunishment;
-		const char* pszCommandPlayerName = pAdmin ? pAdmin->GetPlayerName() : "Console";
-		PrintSingleAdminAction(pszCommandPlayerName, CCSPlayerController::FromSlot(plyBadPerson->GetPlayerSlot())->GetPlayerName(),
-							   strPunishment.c_str());
+		strPunishment.append(".");
+		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "%s %s", pszCommandPlayerName, strPunishment.c_str(), "");
 
 		g_pAdminSystem->RemoveInfractionType(plyBadPerson, itypeToRemove, bRemoveGagAndMute);
 	}, g_rghdGFLBansAuth);
@@ -3174,4 +3147,26 @@ int ParseTimeInput(std::string strTime)
 		default:
 			return iDuration;
 	}
+}
+
+std::string GetReason(const CCommand& args, int iArgsBefore)
+{
+	if (args.ArgC() <= iArgsBefore + 1)
+		return "";
+	std::string strReason = args.ArgS();
+	for (int i = 1; i <= iArgsBefore; i++)
+	{
+		// Remove spaces if arguements were split up by them.
+		while (strReason.at(0) == ' ')
+			strReason = strReason.substr(1);
+		strReason = strReason.substr(std::string(args[i]).length());
+	}
+
+	// Clean up both ends of string very inefficiently...
+	while (strReason.at(0) == ' ' || strReason.at(0) == '\"')
+		strReason = strReason.substr(1);
+	while (strReason.at(strReason.length() - 1) == ' ' || strReason.at(strReason.length() - 1) == '\"')
+		strReason = strReason.substr(0, strReason.length() - 1);
+
+	return strReason;
 }

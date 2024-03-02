@@ -345,3 +345,6 @@ int ParseTimeInput(std::string strTime);
 // Given a time in seconds, returns a formatted string of the largest (floored) unit of time this exceeds, up to months.
 // Example: FormatTime(70) == "1 minute(s)"
 std::string FormatTime(std::time_t wTime, bool bInSeconds = true);
+
+// Gets reason from a user command such as mute, gag, ban, etc.
+std::string GetReason(const CCommand& args, int iArgsBefore);
