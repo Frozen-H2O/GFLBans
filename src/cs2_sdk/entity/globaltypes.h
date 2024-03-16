@@ -20,6 +20,7 @@
 #pragma once
 #include <platform.h>
 #include "schema.h"
+#include "soundflags.h"
 
 enum InputBitMask_t : uint64_t
 {
@@ -60,6 +61,111 @@ enum EInButtonState : uint32_t
 	IN_BUTTON_DOWN_UP_DOWN_UP = 0x6,
 	IN_BUTTON_UP_DOWN_UP_DOWN = 0x7,
 	IN_BUTTON_STATE_COUNT = 0x8,
+};
+
+enum ParticleAttachment_t : uint32_t
+{
+	PATTACH_INVALID = 0xffffffff,
+	PATTACH_ABSORIGIN = 0x0,			// Spawn at entity origin
+	PATTACH_ABSORIGIN_FOLLOW = 0x1,		// Spawn at and follow entity origin
+	PATTACH_CUSTOMORIGIN = 0x2,
+	PATTACH_CUSTOMORIGIN_FOLLOW = 0x3,
+	PATTACH_POINT = 0x4,				// Spawn at attachment point
+	PATTACH_POINT_FOLLOW = 0x5,			// Spawn at and follow attachment point
+	PATTACH_EYES_FOLLOW = 0x6,
+	PATTACH_OVERHEAD_FOLLOW = 0x7,
+	PATTACH_WORLDORIGIN = 0x8,
+	PATTACH_ROOTBONE_FOLLOW = 0x9,
+	PATTACH_RENDERORIGIN_FOLLOW = 0xa,
+	PATTACH_MAIN_VIEW = 0xb,
+	PATTACH_WATERWAKE = 0xc,
+	PATTACH_CENTER_FOLLOW = 0xd,
+	PATTACH_CUSTOM_GAME_STATE_1 = 0xe,
+	PATTACH_HEALTHBAR = 0xf,
+	MAX_PATTACH_TYPES = 0x10,
+};
+
+enum ObserverMode_t : uint8_t
+{
+	OBS_MODE_NONE = 0x0,
+	OBS_MODE_FIXED = 0x1,
+	OBS_MODE_IN_EYE = 0x2,
+	OBS_MODE_CHASE = 0x3,
+	OBS_MODE_ROAMING = 0x4,
+	OBS_MODE_DIRECTED = 0x5,
+	NUM_OBSERVER_MODES = 0x6,
+};
+
+typedef uint32 SoundEventGuid_t;
+struct SndOpEventGuid_t
+{
+	SoundEventGuid_t m_nGuid;
+	uint64 m_hStackHash;
+};
+
+// used with EmitSound_t
+enum gender_t : uint8
+{
+	GENDER_NONE = 0x0,
+	GENDER_MALE = 0x1,
+	GENDER_FEMALE = 0x2,
+	GENDER_NAMVET = 0x3,
+	GENDER_TEENGIRL = 0x4,
+	GENDER_BIKER = 0x5,
+	GENDER_MANAGER = 0x6,
+	GENDER_GAMBLER = 0x7,
+	GENDER_PRODUCER = 0x8,
+	GENDER_COACH = 0x9,
+	GENDER_MECHANIC = 0xA,
+	GENDER_CEDA = 0xB,
+	GENDER_CRAWLER = 0xC,
+	GENDER_UNDISTRACTABLE = 0xD,
+	GENDER_FALLEN = 0xE,
+	GENDER_RIOT_CONTROL = 0xF,
+	GENDER_CLOWN = 0x10,
+	GENDER_JIMMY = 0x11,
+	GENDER_HOSPITAL_PATIENT = 0x12,
+	GENDER_BRIDE = 0x13,
+	GENDER_LAST = 0x14,
+};
+
+struct EmitSound_t
+{
+	EmitSound_t() :
+		m_nChannel(0),
+		m_pSoundName(0),
+		m_flVolume(VOL_NORM),
+		m_SoundLevel(SNDLVL_NONE),
+		m_nFlags(0),
+		m_nPitch(PITCH_NORM),
+		m_pOrigin(0),
+		m_flSoundTime(0.0f),
+		m_pflSoundDuration(0),
+		m_bEmitCloseCaption(true),
+		m_bWarnOnMissingCloseCaption(false),
+		m_bWarnOnDirectWaveReference(false),
+		m_nSpeakerEntity(-1),
+		m_UtlVecSoundOrigin(),
+		m_nForceGuid(0),
+		m_SpeakerGender(GENDER_NONE)
+	{
+	}
+	int m_nChannel;
+	const char *m_pSoundName;
+	float m_flVolume;
+	soundlevel_t m_SoundLevel;
+	int m_nFlags;
+	int m_nPitch;
+	const Vector *m_pOrigin;
+	float m_flSoundTime;
+	float *m_pflSoundDuration;
+	bool m_bEmitCloseCaption;
+	bool m_bWarnOnMissingCloseCaption;
+	bool m_bWarnOnDirectWaveReference;
+	CEntityIndex m_nSpeakerEntity;
+	CUtlVector<Vector, CUtlMemory<Vector, int> > m_UtlVecSoundOrigin;
+	SoundEventGuid_t m_nForceGuid;
+	gender_t m_SpeakerGender;
 };
 
 struct GameTime_t

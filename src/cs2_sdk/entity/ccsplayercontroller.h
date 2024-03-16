@@ -35,13 +35,20 @@ public:
 	SCHEMA_FIELD(bool, m_bPawnIsAlive);
 	SCHEMA_FIELD(CHandle<CCSPlayerPawn>, m_hPlayerPawn);
 
-	static CCSPlayerController* FromPawn(CCSPlayerPawn* pawn) {
+	static CCSPlayerController* FromPawn(CCSPlayerPawn* pawn)
+	{
 		return (CCSPlayerController*)pawn->m_hController().Get();
 	}
 
 	static CCSPlayerController* FromSlot(CPlayerSlot slot)
 	{
 		return (CCSPlayerController*)g_pEntitySystem->GetBaseEntity(CEntityIndex(slot.Get() + 1));
+	}
+
+	// Returns the actual player pawn
+	CCSPlayerPawn *GetPlayerPawn()
+	{
+		return m_hPlayerPawn().Get();
 	}
 
 	ZEPlayer* GetZEPlayer()
@@ -72,12 +79,45 @@ public:
 
 	void Respawn()
 	{
-		CCSPlayerPawn *pPawn = m_hPlayerPawn.Get();
+		CCSPlayerPawn *pPawn = GetPlayerPawn();
 		if (!pPawn || pPawn->IsAlive())
 			return;
 
 		SetPawn(pPawn);
 		static int offset = g_GameConfig->GetOffset("CCSPlayerController_Respawn");
 		CALL_VIRTUAL(void, offset, this);
+	}
+
+	CSPlayerState GetPawnState()
+	{
+		// All CS2 pawns are derived from this
+		CCSPlayerPawnBase *pPawn = (CCSPlayerPawnBase*)GetPawn();
+
+		// The player is still joining so their pawn doesn't exist yet, and STATE_WELCOME is what they start with
+		if (!pPawn)
+			return STATE_WELCOME;
+
+		return pPawn->m_iPlayerState();
+	}
+
+	CSPlayerState GetPlayerPawnState()
+	{
+		CCSPlayerPawn *pPawn = GetPlayerPawn();
+
+		// The player is still joining so their pawn doesn't exist yet, and STATE_WELCOME is what they start with
+		if (!pPawn)
+			return STATE_WELCOME;
+
+		return pPawn->m_iPlayerState();
+	}
+
+	Z_CBaseEntity *GetObserverTarget()
+	{
+		auto pPawn = GetPawn();
+
+		if (!pPawn)
+			return nullptr;
+
+		return pPawn->m_pObserverServices->m_hObserverTarget().Get();
 	}
 };

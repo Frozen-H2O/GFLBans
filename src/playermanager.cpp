@@ -25,8 +25,9 @@
 #include "user_preferences.h"
 #include "entity/ccsplayercontroller.h"
 #include "utils/entity.h"
-#include "ctimer.h"
 #include "serversideclient.h"
+#include "recipientfilters.h"
+#include "ctimer.h"
 #include "ctime"
 
 #define VPROF_ENABLED
@@ -38,51 +39,8 @@
 extern IVEngineServer2 *g_pEngineServer2;
 extern CGameEntitySystem *g_pEntitySystem;
 extern CGlobalVars *gpGlobals;
-extern INetworkGameServer *g_pNetworkGameServer;
 
-extern CUtlVector<CServerSideClient *> *GetClientList();
-
-CUtlVector<ClientJoinInfo_t> g_ClientsPendingAddon;
-
-void AddPendingClient(uint64 steamid)
-{
-	ClientJoinInfo_t PendingCLient {steamid, 0.f};
-	g_ClientsPendingAddon.AddToTail(PendingCLient);
-}
-
-ClientJoinInfo_t *GetPendingClient(uint64 steamid, int &index)
-{
-	index = 0;
-
-	FOR_EACH_VEC(g_ClientsPendingAddon, i)
-	{
-		if (g_ClientsPendingAddon[i].steamid == steamid)
-		{
-			index = i;
-			return &g_ClientsPendingAddon[i];
-		}
-	}
-
-	return nullptr;
-}
-
-ClientJoinInfo_t *GetPendingClient(INetChannel *pNetChan)
-{
-	CUtlVector<CServerSideClient *> *pClients = GetClientList();
-
-	if (!pClients)
-		return nullptr;
-
-	FOR_EACH_VEC(*pClients, i)
-	{
-		CServerSideClient *pClient = pClients->Element(i);
-
-		if (pClient && pClient->GetNetChannel() == pNetChan)
-			return GetPendingClient(pClient->GetClientSteamID()->ConvertToUint64(), i); // just pass i here, it's discarded anyway
-	}
-
-	return nullptr;
-}
+extern CServerSideClient *GetClientBySlot(CPlayerSlot slot);
 
 ZEPlayerHandle::ZEPlayerHandle() : m_Index(INVALID_ZEPLAYERHANDLE_INDEX) {};
 
@@ -178,11 +136,17 @@ void ZEPlayer::SetHideDistance(int distance)
 }
 
 static bool g_bFlashLightShadows = true;
+bool g_bFlashLightTransmitOthers = false;
+static float g_flFlashLightBrightness = 1.0f;
 static float g_flFlashLightDistance = 54.0f; // The minimum distance such that an awp wouldn't block the light
+static Color g_clrFlashLightColor(255, 255, 255);
 static std::string g_sFlashLightAttachment = "axis_of_intent";
 
 FAKE_BOOL_CVAR(cs2f_flashlight_shadows, "Whether to enable flashlight shadows", g_bFlashLightShadows, true, false)
+FAKE_BOOL_CVAR(cs2f_flashlight_transmit_others, "Whether to transmit other player's flashlights, recommended to have shadows off for this", g_bFlashLightTransmitOthers, true, false)
+FAKE_FLOAT_CVAR(cs2f_flashlight_brightness, "How bright should flashlights be", g_flFlashLightBrightness, 1.0f, false)
 FAKE_FLOAT_CVAR(cs2f_flashlight_distance, "How far flashlights should be from the player's head", g_flFlashLightDistance, 54.0f, false)
+FAKE_COLOR_CVAR(cs2f_flashlight_color, "What color to use for flashlights", g_clrFlashLightColor, false)
 FAKE_STRING_CVAR(cs2f_flashlight_attachment, "Which attachment to parent a flashlight to", g_sFlashLightAttachment, false)
 
 void ZEPlayer::SpawnFlashLight()
@@ -202,8 +166,8 @@ void ZEPlayer::SpawnFlashLight()
 	CBarnLight *pLight = (CBarnLight *)CreateEntityByName("light_barn");
 
 	pLight->m_bEnabled = true;
-	pLight->m_Color->SetColor(255, 255, 255, 255);
-	pLight->m_flBrightness = 1.0f;
+	pLight->m_Color->SetColor(g_clrFlashLightColor[0], g_clrFlashLightColor[1], g_clrFlashLightColor[2]);
+	pLight->m_flBrightness = g_flFlashLightBrightness;
 	pLight->m_flRange = 2048.0f;
 	pLight->m_flSoftX = 1.0f;
 	pLight->m_flSoftY = 1.0f;
@@ -228,10 +192,11 @@ void ZEPlayer::SpawnFlashLight()
 
 void ZEPlayer::ToggleFlashLight()
 {
-	CBarnLight *pLight = GetFlashLight();
-
 	// Play the "click" sound
-	g_pEngineServer2->ClientCommand(GetPlayerSlot(), "play sounds/common/talk.vsnd");
+	CSingleRecipientFilter filter(GetPlayerSlot());
+	CCSPlayerController::FromSlot(GetPlayerSlot())->EmitSoundFilter(filter, "HudChat.Message");
+
+	CBarnLight *pLight = GetFlashLight();
 
 	// Create a flashlight if we don't have one, and don't bother with the input since it spawns enabled
 	if (!pLight)
@@ -474,6 +439,56 @@ void CPlayerManager::CheckHideDistances()
 	}
 
 	VPROF_EXIT_SCOPE();
+}
+
+static const char *g_szPlayerStates[] =
+{
+	"STATE_ACTIVE",
+	"STATE_WELCOME",
+	"STATE_PICKINGTEAM",
+	"STATE_PICKINGCLASS",
+	"STATE_DEATH_ANIM",
+	"STATE_DEATH_WAIT_FOR_KEY",
+	"STATE_OBSERVER_MODE",
+	"STATE_GUNGAME_RESPAWN",
+	"STATE_DORMANT"
+};
+
+extern bool g_bEnableHide;
+
+void CPlayerManager::UpdatePlayerStates()
+{
+	for (int i = 0; i < gpGlobals->maxClients; i++)
+	{
+		ZEPlayer *pPlayer = GetPlayer(i);
+
+		if (!pPlayer)
+			continue;
+
+		CCSPlayerController *pController = CCSPlayerController::FromSlot(i);
+
+		if (!pController)
+			continue;
+
+		uint32 iPreviousPlayerState = pPlayer->GetPlayerState();
+		uint32 iCurrentPlayerState = pController->GetPawnState();
+
+		if (iCurrentPlayerState != iPreviousPlayerState)
+		{
+			Message("Player %s changed states from %s to %s\n", pController->GetPlayerName(), g_szPlayerStates[iPreviousPlayerState], g_szPlayerStates[iCurrentPlayerState]);
+
+			pPlayer->SetPlayerState(iCurrentPlayerState);
+
+			// Send full update to people going in/out of spec as a mitigation for hide crashes
+			if (g_bEnableHide && (iCurrentPlayerState == STATE_OBSERVER_MODE || iPreviousPlayerState == STATE_OBSERVER_MODE))
+			{
+				CServerSideClient *pClient = GetClientBySlot(i);
+
+				if (pClient)
+					pClient->ForceFullUpdate();
+			}
+		}
+	}
 }
 
 static bool g_bInfiniteAmmo = false;

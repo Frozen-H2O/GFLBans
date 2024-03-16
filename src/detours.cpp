@@ -56,7 +56,6 @@ extern CCSGameRules *g_pGameRules;
 DECLARE_DETOUR(UTIL_SayTextFilter, Detour_UTIL_SayTextFilter);
 DECLARE_DETOUR(UTIL_SayText2Filter, Detour_UTIL_SayText2Filter);
 DECLARE_DETOUR(IsHearingClient, Detour_IsHearingClient);
-DECLARE_DETOUR(CSoundEmitterSystem_EmitSound, Detour_CSoundEmitterSystem_EmitSound);
 DECLARE_DETOUR(TriggerPush_Touch, Detour_TriggerPush_Touch);
 DECLARE_DETOUR(CGameRules_Constructor, Detour_CGameRules_Constructor);
 DECLARE_DETOUR(CBaseEntity_TakeDamageOld, Detour_CBaseEntity_TakeDamageOld);
@@ -64,8 +63,7 @@ DECLARE_DETOUR(CCSPlayer_WeaponServices_CanUse, Detour_CCSPlayer_WeaponServices_
 DECLARE_DETOUR(CEntityIdentity_AcceptInput, Detour_CEntityIdentity_AcceptInput);
 DECLARE_DETOUR(CNavMesh_GetNearestNavArea, Detour_CNavMesh_GetNearestNavArea);
 DECLARE_DETOUR(FixLagCompEntityRelationship, Detour_FixLagCompEntityRelationship);
-DECLARE_DETOUR(SendNetMessage, Detour_SendNetMessage);
-DECLARE_DETOUR(HostStateRequest, Detour_HostStateRequest);
+DECLARE_DETOUR(CNetworkStringTable_AddString, Detour_AddString);
 
 void FASTCALL Detour_CGameRules_Constructor(CGameRules *pThis)
 {
@@ -187,12 +185,6 @@ void FASTCALL Detour_TriggerPush_Touch(CTriggerPush* pPush, Z_CBaseEntity* pOthe
 
 	flags |= (FL_BASEVELOCITY);
 	pOther->m_fFlags(flags);
-}
-
-void FASTCALL Detour_CSoundEmitterSystem_EmitSound(ISoundEmitterSystemBase *pSoundEmitterSystem, CEntityIndex *a2, IRecipientFilter &filter, uint32 a4, void *a5)
-{
-	//ConMsg("Detour_CSoundEmitterSystem_EmitSound\n");
-	CSoundEmitterSystem_EmitSound(pSoundEmitterSystem, a2, filter, a4, a5);
 }
 
 bool FASTCALL Detour_IsHearingClient(void* serverClient, int index)
@@ -400,7 +392,8 @@ bool FASTCALL Detour_CEntityIdentity_AcceptInput(CEntityIdentity* pThis, CUtlSym
 	if (g_bEnableZR)
 		ZR_Detour_CEntityIdentity_AcceptInput(pThis, pInputName, pActivator, pCaller, value, nOutputID);
 
-    if (!V_strcasecmp(pInputName->String(), "KeyValues"))
+	// Handle KeyValue(s)
+    if (!V_strnicmp(pInputName->String(), "KeyValue", 8))
     {
         if ((value->m_type == FIELD_CSTRING || value->m_type == FIELD_STRING) && value->m_pszString)
         {
@@ -438,49 +431,22 @@ void FASTCALL Detour_FixLagCompEntityRelationship(void *a1, CEntityInstance *pEn
 	return FixLagCompEntityRelationship(a1, pEntity, a3);
 }
 
-std::string g_sExtraAddon;
-FAKE_STRING_CVAR(cs2f_extra_addon, "The workshop ID of an extra addon to mount and send to clients", g_sExtraAddon, false);
+bool g_bBlockEntityStrings = false;
+FAKE_BOOL_CVAR(cs2f_block_entity_strings, "Whether to block adding entries in the EntityNames stringtable", g_bBlockEntityStrings, false, false);
 
-void *FASTCALL Detour_HostStateRequest(void *a1, void **pRequest)
+int64 FASTCALL Detour_AddString(void *pStringTable, bool bServer, const char *pszString, void *a4)
 {
-	// skip if we're doing anything other than changelevel
-	if (g_sExtraAddon.empty() || V_strnicmp((char *)pRequest[2], "changelevel", 11))
-		return HostStateRequest(a1, pRequest);
+	if (!g_bBlockEntityStrings)
+		return CNetworkStringTable_AddString(pStringTable, bServer, pszString, a4);
 
-	// This offset hasn't changed in 6 years so it should be safe
-	CUtlString *sAddonString = (CUtlString*)(pRequest + 11);
+	static int offset = g_GameConfig->GetOffset("CNetworkStringTable_GetTableName");
+	const char *pszStringTableName = CALL_VIRTUAL(const char *, offset, pStringTable);
 
-	// addons are simply comma-delimited, can have any number of them
-	if (!sAddonString->IsEmpty())
-		sAddonString->Format("%s,%s", sAddonString->Get(), g_sExtraAddon.c_str());
-	else
-		sAddonString->Set(g_sExtraAddon.c_str());
+	// The whole name is "EntityNames" so do the bare minimum comparison, since no other table starts with "Ent"
+	if (!V_strncmp(pszStringTableName, "Ent", 3))
+		return -1;
 
-	return HostStateRequest(a1, pRequest);
-}
-
-extern double g_flUniversalTime;
-
-void FASTCALL Detour_SendNetMessage(INetChannel *pNetChan, INetworkSerializable *pNetMessage, void *pData, int a4)
-{
-	NetMessageInfo_t *info = pNetMessage->GetNetMessageInfo();
-
-	// 7 for signon messages
-	if (info->m_MessageId != 7 || g_sExtraAddon.empty())
-		return SendNetMessage(pNetChan, pNetMessage, pData, a4);
-
-	ClientJoinInfo_t *pPendingClient = GetPendingClient(pNetChan);
-
-	if (pPendingClient)
-	{
-		Message("Detour_SendNetMessage: Sending addon %s to client %lli\n", g_sExtraAddon.c_str(), pPendingClient->steamid);
-		CNETMsg_SignonState *pMsg = (CNETMsg_SignonState *)pData;
-		pMsg->set_addons(g_sExtraAddon.c_str());
-		pMsg->set_signon_state(SIGNONSTATE_CHANGELEVEL);
-		pPendingClient->signon_timestamp = g_flUniversalTime;
-	}
-
-	SendNetMessage(pNetChan, pNetMessage, pData, a4);
+	return CNetworkStringTable_AddString(pStringTable, bServer, pszString, a4);
 }
 
 CUtlVector<CDetourBase *> g_vecDetours;
@@ -508,10 +474,6 @@ bool InitDetours(CGameConfig *gameConfig)
 	if (!IsHearingClient.CreateDetour(gameConfig))
 		success = false;
 	IsHearingClient.EnableDetour();
-
-	if (!CSoundEmitterSystem_EmitSound.CreateDetour(gameConfig))
-		success = false;
-	CSoundEmitterSystem_EmitSound.EnableDetour();
 
 	if (!TriggerPush_Touch.CreateDetour(gameConfig))
 		success = false;
@@ -541,13 +503,9 @@ bool InitDetours(CGameConfig *gameConfig)
 		success = false;
 	FixLagCompEntityRelationship.EnableDetour();
 
-	if (!SendNetMessage.CreateDetour(gameConfig))
+	if (!CNetworkStringTable_AddString.CreateDetour(gameConfig))
 		success = false;
-	SendNetMessage.EnableDetour();
-
-	if (!HostStateRequest.CreateDetour(gameConfig))
-		success = false;
-	HostStateRequest.EnableDetour();
+	CNetworkStringTable_AddString.EnableDetour();
 
 	return success;
 }

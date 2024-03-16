@@ -4,6 +4,7 @@
 #include "steam/steamclientpublic.h"
 #include "utlstring.h"
 #include "inetchannel.h"
+#include "gameconfig.h"
 
 class CServerSideClient
 {
@@ -17,6 +18,12 @@ public:
 	CSteamID *GetClientSteamID() const { return (CSteamID*)&m_SteamID; }
 	const char *GetClientName() const { return m_Name.Get(); }
 	netadr_t *GetRemoteAddress() const { return (netadr_t*)&m_NetAdr; }
+
+	void ForceFullUpdate()
+	{
+		Message("Forcing full update on client %s\n", GetClientName());
+		m_nDeltaTick = -1;
+	}
 
 private:
 	[[maybe_unused]] void *m_pVT1; // INetworkMessageProcessingPreFilter
@@ -38,5 +45,7 @@ private:
 	CEntityIndex m_nEntityIndex;	// 212 | 228
 	CUtlString m_Name;				// 216 | 232
 	[[maybe_unused]] char pad8[0x20];
-	netadr_t m_NetAdr;
+	netadr_t m_NetAdr;				// 256 | 272
+	[[maybe_unused]] char pad9[0x40];
+	int m_nDeltaTick;				// 332 | 348
 };

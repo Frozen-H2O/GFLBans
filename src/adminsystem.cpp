@@ -936,7 +936,7 @@ CON_COMMAND_CHAT_FLAGS(entfire, "<name> <input> [parameter] - fire outputs at en
 
 	if (!iFoundEnts)
 	{
-		while (pTarget = UTIL_FindEntityByName(pTarget, args[1], player))
+		while ((pTarget = UTIL_FindEntityByName(pTarget, args[1], player)))
 		{
 			pTarget->AcceptInput(args[2], args[3], player, player);
 			iFoundEnts++;
@@ -945,7 +945,7 @@ CON_COMMAND_CHAT_FLAGS(entfire, "<name> <input> [parameter] - fire outputs at en
 
 	if (!iFoundEnts)
 	{
-		while (pTarget = UTIL_FindEntityByClassname(pTarget, args[1]))
+		while ((pTarget = UTIL_FindEntityByClassname(pTarget, args[1])))
 		{
 			pTarget->AcceptInput(args[2], args[3], player, player);
 			iFoundEnts++;
@@ -1270,7 +1270,7 @@ void CreateBeacon(int playerSlot)
 	{
 		CCSPlayerController* pPlayer = CCSPlayerController::FromSlot(playerSlot);
 		
-		if (!pPlayer || pPlayer->m_iTeamNum < CS_TEAM_T || !pPlayer->m_hPlayerPawn->IsAlive())
+		if (!pPlayer || pPlayer->m_iTeamNum < CS_TEAM_T || !pPlayer->GetPlayerPawn()->IsAlive())
 		{
 			KillBeacon(playerSlot);
 			return -1.0f;
