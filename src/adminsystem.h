@@ -61,6 +61,7 @@ using json = nlohmann::json;
 #define ADMFLAG_ROOT		(1 << 25) // z
 
 #define ADMIN_PREFIX "Admin %s has "
+#define GFLBANS_PREFIX " \x02[GFLBans]\1 "
 
 void PrintSingleAdminAction(const char* pszAdminName, const char* pszTargetName, const char* pszAction, const char* pszAction2, const char* prefix);
 void PrintMultiAdminAction(ETargetType nType, const char* pszAdminName, const char* pszAction, const char* pszAction2, const char* prefix);

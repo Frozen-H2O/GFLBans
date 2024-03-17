@@ -574,8 +574,10 @@ CON_COMMAND_CHAT_FLAGS(kick, "<name> - kick a player", ADMFLAG_KICK)
 		ZEPlayer* pTargetPlayer = g_playerManager->GetPlayer(pSlot[i]);
 
 		g_pEngineServer2->DisconnectClient(pTargetPlayer->GetPlayerSlot(), dcReason);
-
-		PrintSingleAdminAction(pszCommandPlayerName, pTarget->GetPlayerName(), "kicked");
+		if (dcReason == NETWORK_DISCONNECT_KICKED_IDLE)
+			ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "kicked %s (\1reason:\x09 AFK\1).", pszCommandPlayerName, pTarget->GetPlayerName());
+		else
+			PrintSingleAdminAction(pszCommandPlayerName, pTarget->GetPlayerName(), "kicked");
 	}
 }
 
@@ -1138,7 +1140,7 @@ CON_COMMAND_CHAT_FLAGS(extend, "<minutes> - extend current map (negative value r
 		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "extended map time %i minutes.", pszCommandPlayerName, iExtendTime);
 }
 
-CON_COMMAND_CHAT(pm, "<name> <message> - Private message a player. This will also show to online admins")
+CON_COMMAND_CHAT_FLAGS(pm, "<name> <message> - Private message a player. This will also show to online admins", ADMFLAG_GENERIC)
 {
 	if (args.ArgC() < 3)
 	{
@@ -1153,7 +1155,7 @@ CON_COMMAND_CHAT(pm, "<name> <message> - Private message a player. This will als
 			return;
 		if (ply->IsGagged())
 		{
-			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You may not private message players while gagged.");
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may not private message players while gagged.");
 			return;
 		}
 	}
@@ -1164,13 +1166,13 @@ CON_COMMAND_CHAT(pm, "<name> <message> - Private message a player. This will als
 
 	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) > ETargetType::SELF || iNumClients > 1)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You can only private message individual players.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You can only private message individual players.");
 		return;
 	}
 
 	if (!iNumClients)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Target not found.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
 		return;
 	}
 
@@ -1544,8 +1546,8 @@ FAKE_INT_CVAR(gflbans_min_offline_punish_duration, "Minimum amount of minutes fo
 FAKE_INT_CVAR(gflbans_report_cooldown, "Minimum amount of seconds between !report/!calladmin usages. Minimum of 1 second.", g_iGFLBansReportCooldown, 600, false)
 
 //These need to update g_rghdGFLBansAuth when changed, but otherwise work just like a fake cvar as if they weren't commented out:
-// FAKE_STRING_CVAR(gflbans_server_id, "GFLBans ID for the server. DO NOT LEAK THIS", g_strGFLBansServerID, true)
-CON_COMMAND_F(gflbans_server_id, "GFLBans ID for the server. DO NOT LEAK THIS", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY | FCVAR_PROTECTED)
+// FAKE_STRING_CVAR(gflbans_server_id, "GFLBans ID for the server.", g_strGFLBansServerID, true)
+CON_COMMAND_F(gflbans_server_id, "GFLBans ID for the server.", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY | FCVAR_PROTECTED)
 {
 	if (args.ArgC() < 2)
 	{
@@ -1599,13 +1601,13 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 
 	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) > ETargetType::PLAYER || iNumClients > 1)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You can only report individual players.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You can only report individual players.");
 		return;
 	}
 
 	if (!iNumClients)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Player not found.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Player not found.");
 		return;
 	}
 
@@ -1613,7 +1615,7 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 
 	if (!pTarget)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Target not found.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
 		return;
 	}
 
@@ -1621,13 +1623,13 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 
 	if (pTargetPlayer->IsFakeClient())
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You may not report bots, consider using /calladmin instead.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may not report bots, consider using /calladmin instead.");
 		return;
 	}
 
 	if (ply == pTargetPlayer)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You may not report yourself, consider using /calladmin instead.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may not report yourself, consider using /calladmin instead.");
 		return;
 	}
 
@@ -1643,11 +1645,12 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 	
 	if (strMessage.length() <= 0)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You must provide a reason for reporting.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You must provide a reason for reporting.");
 		return;
 	}
 	
-	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Type \x0E/confirm\1 within 30 seconds to send your pending report. Issuing false reports will result in a\x02 ban\1.");
+	ClientPrint(player, HUD_PRINTTALK, " \7[CS2Fixes]\x0B Attempting to report \2%s \x0B(reason: \x09%s\x0B)...", player->GetPlayerName(), strMessage.c_str());
+	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Type \x0E/confirm\1 within 30 seconds to send your pending report. Issuing false reports will result in a\x02 ban\1.");
 	uint64 reportIndex = ply->GetSteamId64();
 	if (g_pAdminSystem->mapPendingReports.find(reportIndex) != g_pAdminSystem->mapPendingReports.end())
 	{
@@ -1686,7 +1689,7 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 				return -1.0f;
 
 			if (ply->GetSteamId64() == reportIndex)
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Your admin call has been cancelled due to not using \x0E/confirm\1 within 30 seconds.");
+				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Your admin call has been cancelled due to not using \x0E/confirm\1 within 30 seconds.");
 		}
 		return -1.0f;
 	});
@@ -1721,11 +1724,12 @@ CON_COMMAND_CHAT(calladmin, "<reason> - request for an admin to join the server"
 	std::string strMessage = GetReason(args, 0);
 	if (strMessage.length() <= 0)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You must provide a reason for calling an admin.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You must provide a reason for calling an admin.");
 		return;
 	}
 
-	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Type \x0E/confirm\1 within 30 seconds to send your pending admin call. Abusing this feature will result in a\x02 ban\1.");
+	ClientPrint(player, HUD_PRINTTALK, " \7[CS2Fixes]\x0B Attempting to call an admin (reason: \x09%s\x0B)...", strMessage.c_str());
+	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Type \x0E/confirm\1 within 30 seconds to send your pending admin call. Abusing this feature will result in a\x02 ban\1.");
 	uint64 reportIndex = ply->GetSteamId64();
 	if (g_pAdminSystem->mapPendingReports.find(reportIndex) != g_pAdminSystem->mapPendingReports.end())
 	{
@@ -1764,7 +1768,7 @@ CON_COMMAND_CHAT(calladmin, "<reason> - request for an admin to join the server"
 				return -1.0f;
 
 			if (ply->GetSteamId64() == reportIndex)
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Your admin call has been cancelled due to not using \x0E/confirm\1 within 30 seconds.");
+				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Your admin call has been cancelled due to not using \x0E/confirm\1 within 30 seconds.");
 		}
 		return -1.0f;
 	});
@@ -1791,7 +1795,7 @@ CON_COMMAND_CHAT(confirm, "- send a report or admin call that you attempted to s
 
 	if (g_pAdminSystem->mapPendingReports.find(ply->GetSteamId64()) == g_pAdminSystem->mapPendingReports.end())
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You do not have any pending reports or admin calls. Please create one with \x02/report\1 or \x02/calladmin\1 before using \x0E/confirm\1");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You do not have any pending reports or admin calls. Please create one with \x02/report\1 or \x02/calladmin\1 before using \x0E/confirm\1");
 		return;
 	}
 
@@ -1852,16 +1856,16 @@ CON_COMMAND_CHAT_FLAGS(claim, "- claims the most recent GFLBans report/calladmin
 		if (!response.value("success", false))
 		{
 			if (response.value("msg", "").length() > 0)
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s", response.value("msg", "").c_str());
+				ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "%s", response.value("msg", "").c_str());
 			else
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Claim request failed. Are you sure there is an open admin call?");
+				ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Claim request failed. Are you sure there is an open admin call?");
 		}
 		else
 		{
 			if (response.value("msg", "").length() > 0)
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s", response.value("msg", "").c_str());
+				ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "%s", response.value("msg", "").c_str());
 			else
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Successfully claimed an admin call.");
+				ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Successfully claimed an admin call.");
 		}
 
 	}, g_rghdGFLBansAuth);
@@ -1891,12 +1895,12 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 
 	if (iNumClients > 1)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You can only target individual players for listing punishments.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You can only target individual players for listing punishments.");
 		return;
 	}
 	else if (iNumClients <= 0)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Target not found.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
 		return;
 	}
 
@@ -1912,9 +1916,9 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 	if (!pTargetPlayer->IsMuted() && !pTargetPlayer->IsGagged())
 	{
 		if (target.length() == 0)
-			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You have no active punishments.");
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You have no active punishments.");
 		else
-			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s has no active punishments.", pTarget->GetPlayerName());
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s has no active punishments.", pTarget->GetPlayerName());
 		return;
 	}
 
@@ -1922,7 +1926,7 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 
 	if (gflPlayer->m_strGSID == "BOT")
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Bots cannot have punishments.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Bots cannot have punishments.");
 		return;
 	}
 
@@ -1950,18 +1954,18 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 		if (response.dump().length() < 5)
 		{
 			if (punishment.length() > 0)
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s %s.",
+				ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "%s %s.",
 							target.length() == 0 ? "You are" : (target + " is").c_str(),
 							punishment.c_str());
 			else
-				ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s no active punishments.", 
+				ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "%s no active punishments.",
 							target.length() == 0 ? "You have" : (target + " has").c_str());
 			
 			return;
 		}
 		
 		if (pTargetPlayer == nullptr)
-			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Check console for punishment information.");
+			ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Check console for punishment information.");
 		else
 		{
 			if (pTargetPlayer->IsMuted() && pTargetPlayer->IsGagged())
@@ -1971,7 +1975,7 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 			else if (pTargetPlayer->IsGagged())
 				punishment = "\2gagged\1";
 
-			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"%s currently %s. Check console for more information.",
+			ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "%s currently %s. Check console for more information.",
 						target.length() == 0 ? "You are" : (target + " is").c_str(),
 						punishment.c_str());
 		}
@@ -2002,7 +2006,7 @@ CON_COMMAND_CHAT_FLAGS(add_dc, "<name> <SteamID 64> <IP Address> - Adds a fake p
 	std::string strSteamID = args[2];
 	if (strSteamID.length() != 17 || std::find_if(strSteamID.begin(), strSteamID.end(), [](unsigned char c) { return !std::isdigit(c); }) != strSteamID.end())
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Invalid Steam64 ID.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Invalid Steam64 ID.");
 		return;
 	}
 	// stoll should be exception safe with above check
@@ -2298,7 +2302,9 @@ void GFLBans_Report::GFLBans_CallAdmin(CCSPlayerController* pCaller)
 		ClientPrint(pCaller, HUD_PRINTTALK, CHAT_PREFIX "GFLBans is currently not responding. Your %s may fail.",
 					bIsReport ? "report"  : "calladmin request");
 
-
+	std::string strName = m_strCallerName;
+	std::string strTarget = bIsReport ? m_strBadPersonName : "";
+	std::string strMessage = m_strMessage;
 	CHandle<CCSPlayerController> hCaller = pCaller->GetHandle();
 	
 #ifdef _DEBUG
@@ -2314,7 +2320,7 @@ void GFLBans_Report::GFLBans_CallAdmin(CCSPlayerController* pCaller)
 #endif
 	g_HTTPManager.POST((g_strGFLBansApiUrl + "gs/calladmin/").c_str(),
 					   CreateReportJSON().dump().c_str(),
-					   [hCaller, bIsReport](HTTPRequestHandle request, json response) {
+					   [hCaller, bIsReport, strName, strTarget, strMessage](HTTPRequestHandle request, json response) {
 	#ifdef _DEBUG
 		Message(("Report/CallAdmin Response:\n" + response.dump(1) + "\n").c_str());
 	#endif
@@ -2327,17 +2333,30 @@ void GFLBans_Report::GFLBans_CallAdmin(CCSPlayerController* pCaller)
 		if (!response.value("sent", false))
 		{
 			if (response.value("is_banned", true))
-				ClientPrint(pCaller, HUD_PRINTTALK, CHAT_PREFIX "You are banned from using !report and !calladmin. Please check GFLBans for more information.");
+				ClientPrint(pCaller, HUD_PRINTTALK, GFLBANS_PREFIX "You are banned from using !report and !calladmin. Please check GFLBans for more information.");
 			else if (response.value("cooldown", 0) > 0)
-				ClientPrint(pCaller, HUD_PRINTTALK, CHAT_PREFIX "The %s command was used recently and is on cooldown for \2%s\1.",
+				ClientPrint(pCaller, HUD_PRINTTALK, GFLBANS_PREFIX "The %s command was used recently and is on cooldown for \2%s\1.",
 							bIsReport ? "report" : "calladmin", FormatTime(response.value("cooldown", 0)).c_str());
 			else
-				ClientPrint(pCaller, HUD_PRINTTALK, CHAT_PREFIX "Your %s failed to send. Please try again",
+				ClientPrint(pCaller, HUD_PRINTTALK, GFLBANS_PREFIX "Your %s failed to send. Please try again",
 							bIsReport ? "report" : "admin call");
 		}
 		else
 		{
-			ClientPrint(pCaller, HUD_PRINTTALK, CHAT_PREFIX "Your %s was sent. If an admin is available, they will help out as soon as possible.",
+			for (int i = 0; i < gpGlobals->maxClients; i++)
+			{
+				ZEPlayer* pPlayer = g_playerManager->GetPlayer(i);
+
+				if (pPlayer && pPlayer->IsAdminFlagSet(ADMFLAG_GENERIC))
+				{
+					if (bIsReport)
+						ClientPrint(CCSPlayerController::FromSlot(i), HUD_PRINTTALK, GFLBANS_PREFIX "\x0F%s reported\x02 %s\x0F (reason: \x09%s\x0F).", strName.c_str(), strTarget.c_str(), strMessage.c_str());
+					else
+						ClientPrint(CCSPlayerController::FromSlot(i), HUD_PRINTTALK, GFLBANS_PREFIX "\x0F%s called an admin (reason: \x09%s\x0F).", strName.c_str(), strMessage.c_str());
+				}
+			}
+
+			ClientPrint(pCaller, HUD_PRINTTALK, GFLBANS_PREFIX "Your %s was sent. If an admin is available, they will help out as soon as possible.",
 						bIsReport ? "report" : "admin request");
 		}
 		
@@ -2502,12 +2521,12 @@ bool CAdminSystem::GFLBans_Heartbeat()
 			bool bWasPunished = pPlayer->IsMuted();
 			if (!g_pAdminSystem->CheckJSONForBlock(pPlayer, jInfractions, GFLBans_InfractionBase::GFLInfractionType::Mute, true, false)
 				&& bWasPunished && !pPlayer->IsMuted())
-				ClientPrint(pTarget, HUD_PRINTTALK, CHAT_PREFIX "You are no longer muted. You may talk again.");
+				ClientPrint(pTarget, HUD_PRINTTALK, GFLBANS_PREFIX "You are no longer muted. You may talk again.");
 
 			bWasPunished = pPlayer->IsGagged();
 			if (!g_pAdminSystem->CheckJSONForBlock(pPlayer, jInfractions, GFLBans_InfractionBase::GFLInfractionType::Gag, true, false)
 				&& bWasPunished && !pPlayer->IsGagged())
-				ClientPrint(pTarget, HUD_PRINTTALK, CHAT_PREFIX "You are no longer gagged. You may type in chat again.");
+				ClientPrint(pTarget, HUD_PRINTTALK, GFLBANS_PREFIX "You are no longer gagged. You may type in chat again.");
 
 			//g_pAdminSystem->CheckJSONForBlock(pPlayer, jInfractions, GFLBans_InfractionBase::GFLInfractionType::AdminChatGag, true, false);
 			// We dont need to check to apply a Call Admin Block server side, since that is all handled by GFLBans itself
@@ -2623,7 +2642,7 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 			strPunishment.append(" (\2GFLBans is currently not responding\1)");
 
 		const char* pszAdminName = pAdmin ? pAdmin->GetPlayerName() : "Console";
-		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "%s%s%s.", pszAdminName, "", strPunishment.c_str(), "");
+		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "%s.", pszAdminName, strPunishment.c_str());
 
 		// We're overwriting the infraction, so remove the previous one first
 		g_pAdminSystem->AddInfraction(infraction);
@@ -2665,7 +2684,7 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 		{
 		// This should only be hit if the player disconnected in the time between the query
 		// being sent and GFLBans responding to the query
-			ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "The player is not on the server...");
+			ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "The player is not on the server...");
 			return;
 		}
 
@@ -2696,7 +2715,7 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 				break;
 			default:
 				// This should never be reached, since we it means we are trying to apply an unimplemented block type
-				ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "Improper block type... Send to a dev with the command used.");
+				ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "Improper block type... Send to a dev with the command used.");
 				return;
 		}
 
@@ -2711,7 +2730,7 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 			strPunishment.append(" (\1reason: \x09" + infPunishment->GetReason() + "\1)");
 
 		const char* pszAdminName = pAdmin ? pAdmin->GetPlayerName() : "Console";
-		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "%s%s%s.", pszAdminName, "", strPunishment.c_str(), "");
+		ClientPrintAll(HUD_PRINTTALK, GFLBANS_PREFIX ADMIN_PREFIX "%s%s.", pszAdminName, "", strPunishment.c_str());
 
 		// We're overwriting the infraction, so remove the previous one first
 		g_pAdminSystem->FindAndRemoveInfraction(plyBadPerson, infraction->GetType(), false);
@@ -2792,7 +2811,7 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 		{
 		// This should only be hit if the player disconnected in the time between the query being sent
 		// and GFLBans responding to the query
-			ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "The player is not on the server...");
+			ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "The player is not on the server...");
 			return;
 		}
 		// Invalidate local punishments of infraction's type
@@ -2830,7 +2849,7 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 		{
 			strPunishment = " is not " + strPunishment + ".";
 			strPunishment = CCSPlayerController::FromSlot(plyBadPerson->GetPlayerSlot())->GetPlayerName() + strPunishment;
-			ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "%s", strPunishment.c_str());
+			ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "%s", strPunishment.c_str());
 			return;
 		}
 
@@ -2840,7 +2859,7 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 		if (infPunishment->GetReason() != "No reason provided")
 			strPunishment.append(" (\1reason: \x09" + infPunishment->GetReason() + "\1)");
 		strPunishment.append(".");
-		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "%s %s", pszCommandPlayerName, strPunishment.c_str(), "");
+		ClientPrintAll(HUD_PRINTTALK, GFLBANS_PREFIX ADMIN_PREFIX "%s", pszCommandPlayerName, strPunishment.c_str());
 
 		g_pAdminSystem->RemoveInfractionType(plyBadPerson, itypeToRemove, bRemoveGagAndMute);
 	}, g_rghdGFLBansAuth);
@@ -3154,18 +3173,24 @@ std::string GetReason(const CCommand& args, int iArgsBefore)
 	if (args.ArgC() <= iArgsBefore + 1)
 		return "";
 	std::string strReason = args.ArgS();
-	for (int i = 1; i <= iArgsBefore; i++)
+
+	for (size_t i = 1; i <= iArgsBefore; i++)
 	{
 		// Remove spaces if arguements were split up by them.
-		while (strReason.at(0) == ' ')
+		while (strReason.length() > 0 && strReason.at(0) == ' ')
+		{
 			strReason = strReason.substr(1);
-		strReason = strReason.substr(std::string(args[i]).length());
+		}
+		int iToRemove = std::string(args[i]).length();
+		if (iToRemove >= strReason.length())
+			return "";
+		strReason = strReason.substr(iToRemove);
 	}
 
 	// Clean up both ends of string very inefficiently...
-	while (strReason.at(0) == ' ' || strReason.at(0) == '\"')
+	while (strReason.length() > 0 && (strReason.at(0) == ' ' || strReason.at(0) == '\"'))
 		strReason = strReason.substr(1);
-	while (strReason.at(strReason.length() - 1) == ' ' || strReason.at(strReason.length() - 1) == '\"')
+	while (strReason.length() > 0 && (strReason.at(strReason.length() - 1) == ' ' || strReason.at(strReason.length() - 1) == '\"'))
 		strReason = strReason.substr(0, strReason.length() - 1);
 
 	return strReason;
