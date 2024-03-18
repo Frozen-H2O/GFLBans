@@ -3187,11 +3187,15 @@ std::string GetReason(const CCommand& args, int iArgsBefore)
 		strReason = strReason.substr(iToRemove);
 	}
 
-	// Clean up both ends of string very inefficiently...
-	while (strReason.length() > 0 && (strReason.at(0) == ' ' || strReason.at(0) == '\"'))
-		strReason = strReason.substr(1);
-	while (strReason.length() > 0 && (strReason.at(strReason.length() - 1) == ' ' || strReason.at(strReason.length() - 1) == '\"'))
-		strReason = strReason.substr(0, strReason.length() - 1);
 
-	return strReason;
+	std::string strOutput = "";
+	std::copy_if(strReason.cbegin(), strReason.cend(), std::back_inserter(strOutput), [](unsigned char c) {return c < 128; });
+
+	// Clean up both ends of string very inefficiently...
+	while (strOutput.length() > 0 && (strOutput.at(0) == ' ' || strOutput.at(0) == '\"'))
+		strOutput = strOutput.substr(1);
+	while (strOutput.length() > 0 && (strOutput.at(strOutput.length() - 1) == ' ' || strOutput.at(strOutput.length() - 1) == '\"'))
+		strOutput = strOutput.substr(0, strOutput.length() - 1);
+
+	return strOutput;
 }
