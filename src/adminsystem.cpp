@@ -38,6 +38,7 @@
 #include <ctime>
 #include <map>
 #include <memory>
+#include <regex>
 #include <utility>
 #include "httpmanager.h"
 #include "vendor/nlohmann/json.hpp"
@@ -1529,10 +1530,12 @@ void CGagInfraction::UndoInfraction(ZEPlayer *player)
 static std::string g_strGFLBansApiUrl = "https://bans.aurora.vg/api/v1/";
 static bool g_bGFLBansAllServers = true;
 static int g_iMinOfflineDurations = 61;
+static int g_bFilterGagDuration = 60;
 static std::string g_strGFLBansHostname = "CS2 ZE Test";
 static std::string g_strGFLBansServerID = "999";
 static std::string g_strGFLBansServerKey = "1337";
 static std::vector<HTTPHeader>* g_rghdGFLBansAuth = new std::vector<HTTPHeader>{HTTPHeader("Authorization", "SERVER " + g_strGFLBansServerID + " " + g_strGFLBansServerKey)};
+static std::regex g_regChatFilter("n+i+g+e+r+", std::regex_constants::ECMAScript | std::regex_constants::icase);
 // This only affects the CURRENT report being sent and is not logged in GFLBans. This means that
 // if a report was sent 1 minute ago with a cooldown of 600 seconds, but a new report is sent with a
 // 20 second cooldown, the new report will be successfull. So for an emergency report that you need
@@ -1542,6 +1545,7 @@ static int g_iGFLBansReportCooldown = 600;
 FAKE_STRING_CVAR(gflbans_api_url, "URL to interact with GFLBans API. Should end in \"api/v1/\"", g_strGFLBansApiUrl, false)
 FAKE_STRING_CVAR(gflbans_hostname, "Name of the server", g_strGFLBansHostname, false) // remove once we can read hostname convar
 FAKE_BOOL_CVAR(gflbans_include_other_servers, "Enables checking punishments from other GFL servers", g_bGFLBansAllServers, true, false)
+FAKE_INT_CVAR(gflbans_filtered_gag_duration, "Minutes to gag a player if they type a filtered message. Gags will only be issued with non-negative values", g_bFilterGagDuration, 60, false)
 FAKE_INT_CVAR(gflbans_min_offline_punish_duration, "Minimum amount of minutes for a mute/gag duration to tick down while client is disconnected. 0 or negative values force all punishments Online Only", g_iMinOfflineDurations, 61, false)
 FAKE_INT_CVAR(gflbans_report_cooldown, "Minimum amount of seconds between !report/!calladmin usages. Minimum of 1 second.", g_iGFLBansReportCooldown, 600, false)
 
@@ -1572,6 +1576,14 @@ CON_COMMAND_F(gflbans_server_key, "GFLBans KEY for the server. DO NOT LEAK THIS"
 	g_strGFLBansServerKey = args[1];
 	g_rghdGFLBansAuth->clear();
 	g_rghdGFLBansAuth->push_back(HTTPHeader("Authorization", "SERVER " + g_strGFLBansServerID + " " + g_strGFLBansServerKey));
+}
+
+CON_COMMAND_F(cs2f_filter_regex, "<regex> - sets the basic_regex (case insensitive) to block any chat messages containing a match", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY | FCVAR_PROTECTED)
+{
+	if (args.ArgC() < 2)
+		return;
+
+	g_regChatFilter = std::regex(args.ArgS(), std::regex_constants::ECMAScript | std::regex_constants::icase);
 }
 
 CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
@@ -2430,6 +2442,32 @@ void CAdminSystem::RemoveSessionPunishments(float fDelay)
 	}
 }
 
+bool CAdminSystem::FilterMessage(CCSPlayerController* plyChatter, const CCommand& args)
+{
+	bool bMatched = std::regex_search(args.GetCommandString(), g_regChatFilter);
+	if (bMatched && g_bFilterGagDuration >= 0)
+	{
+		if (!plyChatter)
+			return true;
+
+		ZEPlayer* pChatter = plyChatter->GetZEPlayer();
+
+		if (pChatter->IsFakeClient() || !pChatter->IsAuthenticated())
+			return true;
+
+		std::shared_ptr<GFLBans_PlayerObjSimple> plyBadPerson = std::make_shared<GFLBans_PlayerObjSimple>(pChatter);
+		std::string strReason = "Sent a filtered chat message";
+
+		std::shared_ptr<GFLBans_Infraction> infraction = std::make_shared<GFLBans_Infraction>(
+			plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Gag, strReason, nullptr,
+			g_bFilterGagDuration, true);
+
+		g_pAdminSystem->GFLBans_CreateInfraction(infraction, plyChatter, nullptr);
+	}
+
+	return bMatched;
+}
+
 
 // https://github.com/GFLClan/sm_gflbans/wiki/Implementer's-Guide-to-the-GFLBans-API#heartbeat
 bool CAdminSystem::GFLBans_Heartbeat()
@@ -2587,7 +2625,7 @@ void CAdminSystem::GFLBans_CheckPlayerInfractions(ZEPlayer* player)
 void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> infPunishment,
 											CCSPlayerController* pBadPerson, CCSPlayerController* pAdmin)
 {
-	if (!pBadPerson || !pAdmin)
+	if (!pBadPerson)
 		return;
 
 	ZEPlayer* plyBadPerson = pBadPerson->GetZEPlayer();
@@ -2650,7 +2688,7 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 	}
 
 	CHandle<CCSPlayerController> hBadPerson = pBadPerson->GetHandle();
-	CHandle<CCSPlayerController> hAdmin = pAdmin->GetHandle();
+	CHandle<CCSPlayerController> hAdmin = pAdmin ? pAdmin->GetHandle() : nullptr;
 
 #ifdef _DEBUG
 	Message(("Create Infraction Query:\n" + g_strGFLBansApiUrl + "infractions/\n").c_str());
@@ -2674,9 +2712,9 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 			return;
 
 		CCSPlayerController* pBadPerson = hBadPerson.Get();
-		CCSPlayerController* pAdmin = hAdmin.Get();
+		CCSPlayerController* pAdmin = hAdmin != nullptr ? hAdmin.Get() : nullptr;
 
-		if (!pAdmin || !pBadPerson)
+		if (!pBadPerson)
 			return;
 
 		ZEPlayer* plyBadPerson = pBadPerson->GetZEPlayer();
@@ -2744,7 +2782,7 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfractionsOfPlayer> infPunishment,
 											CCSPlayerController* pBadPerson, CCSPlayerController* pAdmin)
 {
-	if (!pBadPerson || !pAdmin)
+	if (!pBadPerson)
 		return;
 
 	ZEPlayer* plyBadPerson = pBadPerson->GetZEPlayer();
@@ -2780,7 +2818,7 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 	}
 
 	CHandle<CCSPlayerController> hBadPerson = pBadPerson->GetHandle();
-	CHandle<CCSPlayerController> hAdmin = pAdmin->GetHandle();
+	CHandle<CCSPlayerController> hAdmin = pAdmin ? pAdmin->GetHandle() : nullptr;
 
 #ifdef _DEBUG
 	Message(("Remove Infraction Query:\n" + g_strGFLBansApiUrl + "infractions/remove\n").c_str());
@@ -2801,9 +2839,9 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 		Message(("Remove Infraction Response:\n" + response.dump(1) + "\n").c_str());
 #endif
 		CCSPlayerController* pBadPerson = hBadPerson.Get();
-		CCSPlayerController* pAdmin = hAdmin.Get();
+		CCSPlayerController* pAdmin = hAdmin != nullptr ? hAdmin.Get() : nullptr;
 
-		if (!pBadPerson || !pAdmin)
+		if (!pBadPerson)
 			return;
 
 		ZEPlayer* plyBadPerson = pBadPerson->GetZEPlayer();
@@ -3178,9 +3216,7 @@ std::string GetReason(const CCommand& args, int iArgsBefore)
 	{
 		// Remove spaces if arguements were split up by them.
 		while (strReason.length() > 0 && strReason.at(0) == ' ')
-		{
 			strReason = strReason.substr(1);
-		}
 		int iToRemove = std::string(args[i]).length();
 		if (iToRemove >= strReason.length())
 			return "";

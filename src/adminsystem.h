@@ -286,6 +286,10 @@ public:
 	bool FindAndRemoveInfraction(ZEPlayer* player, CInfractionBase::EInfractionType type, bool bRemoveSession = true);
 	CAdmin* FindAdmin(uint64 iSteamID);
 
+	// Returns true if a chat message should be filtered and false if not
+	// If gflbans_filtered_gag_duration is non-negative, plyChatter will be gagged for that duration if true return value
+	bool FilterMessage(CCSPlayerController* plyChatter, const CCommand& args);
+
 	// Updates m_wLastHeartbeat to the last time the heartbeat successfully got a response from GFLBans
 	// Allows GFLBans to do the following:
 	// - Know if the server is alive

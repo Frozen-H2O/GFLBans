@@ -339,7 +339,7 @@ void CS2Fixes::Hook_DispatchConCommand(ConCommandHandle cmdHandle, const CComman
 		bool bGagged = pController && pController->GetZEPlayer()->IsGagged();
 		bool bFlooding = pController && pController->GetZEPlayer()->IsFlooding();
 		bool bAdminChat = *args[1] == '@';
-		bool bSilent = *args[1] == '/' || bAdminChat;
+		bool bSilent = *args[1] == '/' || bAdminChat || (!bGagged && g_pAdminSystem->FilterMessage(pController, args));
 		bool bCommand = *args[1] == '!' || *args[1] == '/';
 
 		// Chat messages should generate events regardless
