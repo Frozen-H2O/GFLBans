@@ -33,6 +33,7 @@
 #include "entity/cparticlesystem.h"
 #include "entity/cgamerules.h"
 #include "gamesystem.h"
+#include "recipientfilters.h"
 #include <vector>
 #include <cmath>
 #include <ctime>
@@ -662,6 +663,8 @@ CON_COMMAND_CHAT_FLAGS(slap, "<name> [damage] - slap a player", ADMFLAG_SLAY)
 		pPawn->SetAbsVelocity(velocity);
 
 		int iDamage = V_StringToInt32(args[2], 0);
+		CSingleRecipientFilter filter(pTarget->GetPlayerSlot());
+		CCSPlayerController::FromSlot(pTarget->GetPlayerSlot())->EmitSoundFilter(filter, "Player.DamageFall");
 
 		if (iDamage > 0)
 			pPawn->TakeDamage(iDamage);
@@ -1208,6 +1211,135 @@ CON_COMMAND_CHAT_FLAGS(pm, "<name> <message> - Private message a player. This wi
 	ClientPrint(player, HUD_PRINTTALK, "\x0A[PM to %s]\x0C %s\1: \x0B%s", pTarget->GetPlayerName(), pszName, strMessage.c_str());
 	ClientPrint(pTarget, HUD_PRINTTALK, "\x0A[PM]\x0C %s\1: \x0B%s", pszName, strMessage.c_str());
 	Message("[PM to %s] %s: %s\n", pTarget->GetPlayerName(), pszName, strMessage.c_str());
+}
+
+CON_COMMAND_CHAT_FLAGS(who, "- List the flags of all online players", ADMFLAG_GENERIC)
+{
+	std::vector<std::tuple<std::string, std::string, uint64>> rgNameSlotID;
+
+	for (size_t i = 0; i < gpGlobals->maxClients; i++)
+	{
+		CCSPlayerController* ccsPly = CCSPlayerController::FromSlot(i);
+
+		if (!ccsPly)
+			continue;
+
+		ZEPlayer* pPlayer = ccsPly->GetZEPlayer();
+
+		if (!pPlayer)
+			continue;
+
+		std::string strName = ccsPly->GetPlayerName();
+		if (strName.length() == 0)
+			strName = "< blank >";
+		else if (strName.length() > 20)
+			strName = strName.substr(0, 17) + "...";
+
+		if (pPlayer->IsFakeClient())
+		{
+			rgNameSlotID.push_back(std::tuple<std::string, std::string, uint64>(strName, "BOT", 0));
+			continue;
+		}
+
+		uint64 iSteamID = pPlayer->IsAuthenticated() ? pPlayer->GetSteamId64() : pPlayer->GetUnauthenticatedSteamId64();
+		uint64 iFlags = pPlayer->GetAdminFlags();
+		std::string strFlags = "";
+
+		if (iFlags & ADMFLAG_ROOT)
+			strFlags = "ROOT";
+		else
+		{
+			if (iFlags & ADMFLAG_RESERVATION)
+				strFlags.append(", RESERVATION");
+			if (iFlags & ADMFLAG_GENERIC)
+				strFlags.append(", GENERIC");
+			if (iFlags & ADMFLAG_KICK)
+				strFlags.append(", KICK");
+			if (iFlags & ADMFLAG_BAN)
+				strFlags.append(", BAN");
+			if (iFlags & ADMFLAG_UNBAN)
+				strFlags.append(", UNBAN");
+			if (iFlags & ADMFLAG_SLAY)
+				strFlags.append(", SLAY");
+			if (iFlags & ADMFLAG_CHANGEMAP)
+				strFlags.append(", CHANGEMAP");
+			if (iFlags & ADMFLAG_CONVARS)
+				strFlags.append(", CONVARS");
+			if (iFlags & ADMFLAG_CONFIG)
+				strFlags.append(", CONFIG");
+			if (iFlags & ADMFLAG_CHAT)
+				strFlags.append(", CHAT");
+			if (iFlags & ADMFLAG_VOTE)
+				strFlags.append(", VOTE");
+			if (iFlags & ADMFLAG_PASSWORD)
+				strFlags.append(", PASSWORD");
+			if (iFlags & ADMFLAG_RCON)
+				strFlags.append(", RCON");
+			if (iFlags & ADMFLAG_CHEATS)
+				strFlags.append(", CHEATS");
+			if (iFlags & ADMFLAG_CUSTOM1)
+				strFlags.append(", CUSTOM1");
+			if (iFlags & ADMFLAG_CUSTOM2)
+				strFlags.append(", CUSTOM2");
+			if (iFlags & ADMFLAG_CUSTOM3)
+				strFlags.append(", CUSTOM3");
+			if (iFlags & ADMFLAG_CUSTOM4)
+				strFlags.append(", CUSTOM4");
+			if (iFlags & ADMFLAG_CUSTOM5)
+				strFlags.append(", CUSTOM5");
+			if (iFlags & ADMFLAG_CUSTOM6)
+				strFlags.append(", CUSTOM6");
+			if (iFlags & ADMFLAG_CUSTOM7)
+				strFlags.append(", CUSTOM7");
+			if (iFlags & ADMFLAG_CUSTOM8)
+				strFlags.append(", CUSTOM8");
+			if (iFlags & ADMFLAG_CUSTOM9)
+				strFlags.append(", CUSTOM9");
+			if (iFlags & ADMFLAG_CUSTOM10)
+				strFlags.append(", CUSTOM10");
+			if (iFlags & ADMFLAG_CUSTOM11)
+				strFlags.append(", CUSTOM11");
+
+			if (strFlags.length() > 1)
+				strFlags = strFlags.substr(2);
+			else
+				strFlags = "NONE";
+		}
+
+		rgNameSlotID.push_back(std::tuple<std::string, std::string, uint64>(strName, strFlags, iSteamID));
+	}
+	std::sort(rgNameSlotID.begin(), rgNameSlotID.end(), [](auto const& a, auto const& b) {
+		std::string f = std::get<0>(a);
+		std::string s = std::get<0>(b);
+		std::transform(f.begin(), f.end(), f.begin(), [](unsigned char c) { return c > 127 ? 127 : std::tolower(c); });
+		std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return c > 127 ? 127 : std::tolower(c); });
+		return f < s;
+	});
+
+	ClientPrint(player, HUD_PRINTCONSOLE, "c_who output: %i client%s", rgNameSlotID.size(), rgNameSlotID.size() == 1 ? "" : "s");
+	ClientPrint(player, HUD_PRINTCONSOLE, std::format("|{:-<22}|{:-<52}|{:-<19}|", "-", "-", "-").c_str());
+	ClientPrint(player, HUD_PRINTCONSOLE, std::format("| {:^20} | {:^50} | {:^17} |", "Name", "Flags", "Steam64 ID").c_str());
+	ClientPrint(player, HUD_PRINTCONSOLE, std::format("|{:-<22}|{:-<52}|{:-<19}|", "-", "-", "").c_str());
+	for (auto [strPlayerName, strFlags, iSteamID] : rgNameSlotID)
+	{
+		if (strFlags.length() <= 50)
+		{
+			ClientPrint(player, HUD_PRINTCONSOLE, std::format("| {:^20} | {:^50} | {:0^17} |", strPlayerName, strFlags, iSteamID).c_str());
+		}
+		else
+		{
+			int iIndexToCut = strFlags.substr(0, 50).find_last_of(',') + 1;
+			ClientPrint(player, HUD_PRINTCONSOLE, std::format("| {:^20} | {:^50} | {:0^17} |", strPlayerName, strFlags.substr(0, iIndexToCut), iSteamID).c_str());
+			while (strFlags.length() > 50 && iIndexToCut < strFlags.length())
+			{
+				strFlags = strFlags.substr(iIndexToCut + 1);
+				ClientPrint(player, HUD_PRINTCONSOLE, std::format("| {:^20} | {:^50} | {:^17} |", "", strFlags.substr(0, 50), "").c_str());
+				iIndexToCut = strFlags.substr(0, 50).find_last_of(',') + 1;
+			}
+		}	
+	}
+	ClientPrint(player, HUD_PRINTCONSOLE, std::format("|{:-<22}|{:-<52}|{:-<19}|", "-", "-", "").c_str());
+	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Check console for output.");
 }
 
 void PrecacheAdminBeaconParticle(IEntityResourceManifest* pResourceManifest)
@@ -2456,7 +2588,7 @@ bool CAdminSystem::FilterMessage(CCSPlayerController* plyChatter, const CCommand
 			return true;
 
 		std::shared_ptr<GFLBans_PlayerObjSimple> plyBadPerson = std::make_shared<GFLBans_PlayerObjSimple>(pChatter);
-		std::string strReason = "Sent a filtered chat message";
+		std::string strReason = "Filtered chat message";
 
 		std::shared_ptr<GFLBans_Infraction> infraction = std::make_shared<GFLBans_Infraction>(
 			plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Gag, strReason, nullptr,

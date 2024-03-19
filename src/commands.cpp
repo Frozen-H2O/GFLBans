@@ -436,6 +436,18 @@ CON_COMMAND_CHAT(help, "- Display list of commands in console")
 	ClientPrint(player, HUD_PRINTCONSOLE, "! can be replaced with / for a silent chat command, or c_ for console usage");
 }
 
+CON_COMMAND_CHAT(getpos, "- dump your position and angles")
+{
+	if (!player)
+		return;
+
+	Vector vecAbsOrigin = player->GetPawn()->GetAbsOrigin();
+	QAngle angRotation = player->GetPawn()->GetAbsRotation();
+
+	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "setpos %f %f %f;setang %f %f %f", vecAbsOrigin.x, vecAbsOrigin.y, vecAbsOrigin.z, angRotation.x, angRotation.y, angRotation.z);
+	ClientPrint(player, HUD_PRINTCONSOLE, "setpos %f %f %f;setang %f %f %f", vecAbsOrigin.x, vecAbsOrigin.y, vecAbsOrigin.z, angRotation.x, angRotation.y, angRotation.z);
+}
+
 
 #if _DEBUG
 CON_COMMAND_CHAT(myuid, "- test")
