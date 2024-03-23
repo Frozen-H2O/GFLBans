@@ -535,6 +535,134 @@ CON_COMMAND_CHAT_FLAGS(ungag, "<name> <reason> - ungags a player", ADMFLAG_CHAT)
 	}
 }
 
+CON_COMMAND_CHAT_FLAGS(silence, "<name> <(+)duration> <reason> - mute and gag a player", ADMFLAG_CHAT)
+{
+	if (args.ArgC() < 2)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !silence <name> <(+)duration> <reason>");
+		return;
+	}
+
+	int iCommandPlayer = player ? player->GetPlayerSlot() : -1;
+	int iNumClients = 0;
+	int pSlot[MAXPLAYERS];
+
+	ETargetType nType = g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot);
+
+	if (!iNumClients)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
+		return;
+	}
+
+	int iDuration = args.ArgC() < 3 ? -1 : ParseTimeInput(args[2]);
+
+	if (nType >= ETargetType::ALL || iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may only silence individuals.");
+		return;
+	}
+
+	if (nType == ETargetType::RANDOM || nType == ETargetType::RANDOM_T || nType == ETargetType::RANDOM_CT)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may not silence random players.");
+		return;
+	}
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[0]);
+
+	if (!pTarget)
+		return;
+
+	ZEPlayer* pTargetPlayer = g_playerManager->GetPlayer(pSlot[0]);
+
+	if (pTargetPlayer->IsFakeClient())
+		return;
+
+	if (!pTargetPlayer->IsAuthenticated())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s is not yet authenticated, please wait a moment and try again.", pTarget->GetPlayerName());
+		return;
+	}
+
+	std::shared_ptr<GFLBans_PlayerObjSimple> plyBadPerson = std::make_shared<GFLBans_PlayerObjSimple>(pTargetPlayer);
+	std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr;
+	if (player)
+		plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
+
+	std::string strReason = GetReason(args, 2);
+
+	bool bOnlineOnly = iDuration > 0 && (args[2][0] == '+' ||
+											!g_pAdminSystem->CanPunishmentBeOffline(iDuration));
+
+	std::shared_ptr<GFLBans_Infraction> infraction = std::make_shared<GFLBans_Infraction>(
+		plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Silence, strReason, plyAdmin,
+		iDuration, bOnlineOnly);
+
+	g_pAdminSystem->GFLBans_CreateInfraction(infraction, pTarget, player);
+}
+
+CON_COMMAND_CHAT_FLAGS(unsilence, "<name> <reason> - unmutes and ungags a player", ADMFLAG_CHAT)
+{
+	if (args.ArgC() < 2)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !unsilence <name> <reason>");
+		return;
+	}
+
+	int iCommandPlayer = player ? player->GetPlayerSlot() : -1;
+	int iNumClients = 0;
+	int pSlot[MAXPLAYERS];
+
+	ETargetType nType = g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot);
+
+	if (!iNumClients)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
+		return;
+	}
+
+	if (nType >= ETargetType::ALL || iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may only unsilence individuals.");
+		return;
+	}
+
+	if (nType == ETargetType::RANDOM || nType == ETargetType::RANDOM_T || nType == ETargetType::RANDOM_CT)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may not unsilence random players.");
+		return;
+	}
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[0]);
+
+	if (!pTarget)
+		return;
+
+	ZEPlayer* pTargetPlayer = g_playerManager->GetPlayer(pSlot[0]);
+
+	if (pTargetPlayer->IsFakeClient())
+		return;
+
+	if (!pTargetPlayer->IsAuthenticated())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s is not yet authenticated, please wait a moment and try again.", pTarget->GetPlayerName());
+		return;
+	}
+
+	std::shared_ptr<GFLBans_PlayerObjSimple> plyBadPerson = std::make_shared<GFLBans_PlayerObjSimple>(pTargetPlayer);
+	std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr;
+	if (player)
+		plyAdmin = std::make_shared<GFLBans_PlayerObjNoIp>(player->GetZEPlayer());
+
+	std::string strReason = GetReason(args, 1);
+
+	std::shared_ptr<GFLBans_RemoveInfractionsOfPlayer> infraction = std::make_shared<GFLBans_RemoveInfractionsOfPlayer>(
+		plyBadPerson, GFLBans_InfractionBase::GFLInfractionType::Silence, strReason, plyAdmin);
+
+	g_pAdminSystem->GFLBans_RemoveInfraction(infraction, pTarget, player);
+}
+
 CON_COMMAND_CHAT_FLAGS(kick, "<name> - kick a player", ADMFLAG_KICK)
 {
 	if (args.ArgC() < 2)
@@ -1317,28 +1445,65 @@ CON_COMMAND_CHAT_FLAGS(who, "- List the flags of all online players", ADMFLAG_GE
 	});
 
 	ClientPrint(player, HUD_PRINTCONSOLE, "c_who output: %i client%s", rgNameSlotID.size(), rgNameSlotID.size() == 1 ? "" : "s");
-	ClientPrint(player, HUD_PRINTCONSOLE, std::format("|{:-<22}|{:-<52}|{:-<19}|", "-", "-", "-").c_str());
-	ClientPrint(player, HUD_PRINTCONSOLE, std::format("| {:^20} | {:^50} | {:^17} |", "Name", "Flags", "Steam64 ID").c_str());
-	ClientPrint(player, HUD_PRINTCONSOLE, std::format("|{:-<22}|{:-<52}|{:-<19}|", "-", "-", "").c_str());
+	ClientPrint(player, HUD_PRINTCONSOLE, "|----------------------|----------------------------------------------------|-------------------|");
+	ClientPrint(player, HUD_PRINTCONSOLE, "|         Name         |                       Flags                        |    Steam64 ID     |");
+	ClientPrint(player, HUD_PRINTCONSOLE, "|----------------------|----------------------------------------------------|-------------------|");
 	for (auto [strPlayerName, strFlags, iSteamID] : rgNameSlotID)
 	{
+
+		if (strPlayerName.length() % 2 == 1)
+			strPlayerName = strPlayerName + ' ';
+		if (strPlayerName.length() < 20)
+			strPlayerName = std::string((20 - strPlayerName.length()) / 2, ' ') + strPlayerName + std::string((20 - strPlayerName.length()) / 2, ' ');
+
 		if (strFlags.length() <= 50)
 		{
-			ClientPrint(player, HUD_PRINTCONSOLE, std::format("| {:^20} | {:^50} | {:0^17} |", strPlayerName, strFlags, iSteamID).c_str());
+			if (strFlags.length() % 2 == 1)
+				strFlags = strFlags + ' ';
+			if (strFlags.length() < 50)
+				strFlags = std::string((50 - strFlags.length()) / 2, ' ') + strFlags + std::string((50 - strFlags.length()) / 2, ' ');
+				
+			if (iSteamID != 0)
+				ClientPrint(player, HUD_PRINTCONSOLE, "| %s | %s | %lli |", strPlayerName.c_str(), strFlags.c_str(), iSteamID);
+			else
+				ClientPrint(player, HUD_PRINTCONSOLE, "| %s | %s | 00000000000000000 |", strPlayerName.c_str(), strFlags.c_str());
 		}
 		else
 		{
 			int iIndexToCut = strFlags.substr(0, 50).find_last_of(',') + 1;
-			ClientPrint(player, HUD_PRINTCONSOLE, std::format("| {:^20} | {:^50} | {:0^17} |", strPlayerName, strFlags.substr(0, iIndexToCut), iSteamID).c_str());
-			while (strFlags.length() > 50 && iIndexToCut < strFlags.length())
+			std::string strTemp = strFlags.substr(0, iIndexToCut);
+			if (strTemp.length() % 2 == 1)
+				strTemp = strTemp + ' ';
+			if (strTemp.length() < 50)
+				strTemp = std::string((50 - strTemp.length()) / 2, ' ') + strTemp + std::string((50 - strTemp.length()) / 2, ' ');
+			strFlags = strFlags.substr(iIndexToCut + 1);
+
+			if (iSteamID != 0)
+				ClientPrint(player, HUD_PRINTCONSOLE, "| %s | %s | %lli |", strPlayerName.c_str(), strTemp.c_str(), iSteamID);
+			else
+				ClientPrint(player, HUD_PRINTCONSOLE, "| %s | %s | 00000000000000000 |", strPlayerName.c_str(), strTemp.c_str());
+			while (strFlags.length() > 0)
 			{
-				strFlags = strFlags.substr(iIndexToCut + 1);
-				ClientPrint(player, HUD_PRINTCONSOLE, std::format("| {:^20} | {:^50} | {:^17} |", "", strFlags.substr(0, 50), "").c_str());
 				iIndexToCut = strFlags.substr(0, 50).find_last_of(',') + 1;
+				if (iIndexToCut == 0 || iIndexToCut + 1 > strFlags.length() || strFlags.length() < 50)
+				{
+					strTemp = strFlags;
+					strFlags = "";
+				}
+				else
+				{
+					strTemp = strFlags.substr(0, iIndexToCut);
+					strFlags = strFlags.substr(iIndexToCut + 1);
+				}
+				if (strTemp.length() % 2 == 1)
+					strTemp = ' ' + strTemp;
+				if (strTemp.length() < 50)
+					strTemp = std::string((50 - strTemp.length()) / 2, ' ') + strTemp + std::string((50 - strTemp.length()) / 2, ' ');
+				ClientPrint(player, HUD_PRINTCONSOLE, "|                      | %s |                   |", strTemp.c_str());
 			}
 		}	
 	}
-	ClientPrint(player, HUD_PRINTCONSOLE, std::format("|{:-<22}|{:-<52}|{:-<19}|", "-", "-", "").c_str());
+	ClientPrint(player, HUD_PRINTCONSOLE, "|----------------------|----------------------------------------------------|-------------------|");
 	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Check console for output.");
 }
 
@@ -1655,9 +1820,8 @@ void CGagInfraction::UndoInfraction(ZEPlayer *player)
 	player->SetGagged(false);
 }
 
-//--------------------------------------------------------------------------------------------------
-// GFLBans Specific stuff (kept mostly seperate for easier merging with CS2Fixes public repo)
-//--------------------------------------------------------------------------------------------------
+
+// GFLBans Specific stuff
 
 static std::string g_strGFLBansApiUrl = "https://bans.aurora.vg/api/v1/";
 static bool g_bGFLBansAllServers = true;
@@ -2795,6 +2959,13 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 				strPunishment = "banned";
 				infraction = new CBanInfraction(0, plyBadPerson->GetSteamId64());
 				break;
+			case GFLBans_InfractionBase::GFLInfractionType::Silence:
+				strPunishment = "silenced";
+				infraction = new CMuteInfraction(0, plyBadPerson->GetSteamId64(), false, true);
+				g_pAdminSystem->AddInfraction(infraction);
+				infraction->ApplyInfraction(plyBadPerson);
+				infraction = new CGagInfraction(0, plyBadPerson->GetSteamId64(), false, true);
+				break;
 			default:
 				// This should never be reached, since we it means we are trying to apply an unimplemented block type
 				ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "Improper block type... Send to a dev with the command used.");
@@ -2883,6 +3054,14 @@ void CAdminSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction> 
 				strPunishment = "banned";
 				infraction = new CBanInfraction(iDuration, plyBadPerson->GetSteamId64());
 				break;
+			case GFLBans_InfractionBase::GFLInfractionType::Silence:
+				strPunishment = "silenced";
+				infraction = new CMuteInfraction(0, plyBadPerson->GetSteamId64(), false, true);
+				g_pAdminSystem->FindAndRemoveInfraction(plyBadPerson, infraction->GetType(), false);
+				g_pAdminSystem->AddInfraction(infraction);
+				infraction->ApplyInfraction(plyBadPerson);
+				infraction = new CGagInfraction(0, plyBadPerson->GetSteamId64(), false, true);
+				break;
 			default:
 				// This should never be reached, since we it means we are trying to apply an unimplemented block type
 				ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "Improper block type... Send to a dev with the command used.");
@@ -2942,6 +3121,11 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 				break;
 			case GFLBans_InfractionBase::GFLInfractionType::Gag:
 				bIsPunished = plyBadPerson->IsGagged();
+				RemoveInfractionType(plyBadPerson, CInfractionBase::EInfractionType::Gag, false);
+				break;
+			case GFLBans_InfractionBase::GFLInfractionType::Silence:
+				bIsPunished = plyBadPerson->IsGagged() || plyBadPerson->IsMuted();
+				RemoveInfractionType(plyBadPerson, CInfractionBase::EInfractionType::Mute, false);
 				RemoveInfractionType(plyBadPerson, CInfractionBase::EInfractionType::Gag, false);
 				break;
 		}
@@ -3009,6 +3193,7 @@ void CAdminSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_RemoveInfrac
 			case GFLBans_InfractionBase::GFLInfractionType::Silence:
 				strPunishment = "silenced";
 				bIsPunished = plyBadPerson->IsGagged() || plyBadPerson->IsMuted();
+				itypeToRemove = CInfractionBase::EInfractionType::Mute;
 				bRemoveGagAndMute = true;
 				break;
 			default:
@@ -3058,7 +3243,7 @@ void CAdminSystem::RemoveInfractionType(ZEPlayer* player, CInfractionBase::EInfr
 		}
 	}
 
-	FOR_EACH_VEC(m_vecInfractions, i)
+	FOR_EACH_VEC_BACK(m_vecInfractions, i)
 	{
 		uint64 iSteamID = player->IsAuthenticated() ? player->GetSteamId64() : player->GetUnauthenticatedSteamId64();
 
