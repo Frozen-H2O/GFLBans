@@ -1831,6 +1831,7 @@ static std::string g_strGFLBansHostname = "CS2 ZE Test";
 static std::string g_strGFLBansServerID = "999";
 static std::string g_strGFLBansServerKey = "1337";
 static std::vector<HTTPHeader>* g_rghdGFLBansAuth = new std::vector<HTTPHeader>{HTTPHeader("Authorization", "SERVER " + g_strGFLBansServerID + " " + g_strGFLBansServerKey)};
+static std::string g_strChatFilter = "n+i+g+e+r+";
 static std::regex g_regChatFilter("n+i+g+e+r+", std::regex_constants::ECMAScript | std::regex_constants::icase);
 // This only affects the CURRENT report being sent and is not logged in GFLBans. This means that
 // if a report was sent 1 minute ago with a cooldown of 600 seconds, but a new report is sent with a
@@ -1877,9 +1878,12 @@ CON_COMMAND_F(gflbans_server_key, "GFLBans KEY for the server. DO NOT LEAK THIS"
 CON_COMMAND_F(cs2f_filter_regex, "<regex> - sets the basic_regex (case insensitive) to block any chat messages containing a match", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY | FCVAR_PROTECTED)
 {
 	if (args.ArgC() < 2)
+	{
+		Msg("%s %s\n", args[0], g_strChatFilter.c_str());
 		return;
-
-	g_regChatFilter = std::regex(args.ArgS(), std::regex_constants::ECMAScript | std::regex_constants::icase);
+	}
+	g_strChatFilter = args[1];
+	g_regChatFilter = std::regex(g_strChatFilter, std::regex_constants::ECMAScript | std::regex_constants::icase);
 }
 
 CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
