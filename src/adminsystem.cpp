@@ -1596,6 +1596,39 @@ CON_COMMAND_CHAT_FLAGS(who, "- List the flags of all online players", ADMFLAG_GE
 	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Check console for output.");
 }
 
+CON_COMMAND_CHAT_FLAGS(say, "[count] <message> - Announce an important message to all players", ADMFLAG_GENERIC)
+{
+	if (args.ArgC() < 2)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !say [count] <message>");
+		return;
+	}
+
+	int iCount = V_StringToInt32(args[1], -1);
+
+	if (iCount <= 0)
+		ClientPrintAll(HUD_PRINTTALK, " \x0F[ADMIN]\x02 %s\x0F: %s", player ? player->GetPlayerName() : "CONSOLE", args.ArgS());
+	else
+	{
+		if (iCount > 8)
+			iCount = 8;
+		std::string strMessage = GetReason(args, 1, false);
+		for (int i = 0; i < iCount; i++)
+			ClientPrintAll(HUD_PRINTTALK, " \x0F[ADMIN]\x02 %s\x0F: %s", player ? player->GetPlayerName() : "CONSOLE", strMessage.c_str());
+	}
+
+	for (int i = 0; i < gpGlobals->maxClients; i++)
+	{
+		CBasePlayerController* pTarget = (CBasePlayerController*)g_pEntitySystem->GetBaseEntity((CEntityIndex)(i + 1));
+
+		if (!pTarget)
+			continue;
+
+		CSingleRecipientFilter filter(pTarget->GetPlayerSlot());
+		CCSPlayerController::FromSlot(pTarget->GetPlayerSlot())->EmitSoundFilter(filter, "C4.ExplodeWarning");
+	}
+}
+
 void PrecacheAdminBeaconParticle(IEntityResourceManifest* pResourceManifest)
 {
 	pResourceManifest->AddResource(g_sBeaconParticle.c_str());
@@ -1920,8 +1953,8 @@ static std::string g_strGFLBansHostname = "CS2 ZE Test";
 static std::string g_strGFLBansServerID = "999";
 static std::string g_strGFLBansServerKey = "1337";
 static std::vector<HTTPHeader>* g_rghdGFLBansAuth = new std::vector<HTTPHeader>{HTTPHeader("Authorization", "SERVER " + g_strGFLBansServerID + " " + g_strGFLBansServerKey)};
-static std::string g_strChatFilter = "n+i+g+e+r+";
-static std::regex g_regChatFilter("n+i+g+e+r+", std::regex_constants::ECMAScript | std::regex_constants::icase);
+static std::string g_strChatFilter = "n+i+g+e+r";
+static std::regex g_regChatFilter("n+i+g+e+r", std::regex_constants::ECMAScript | std::regex_constants::icase);
 // This only affects the CURRENT report being sent and is not logged in GFLBans. This means that
 // if a report was sent 1 minute ago with a cooldown of 600 seconds, but a new report is sent with a
 // 20 second cooldown, the new report will be successfull. So for an emergency report that you need
