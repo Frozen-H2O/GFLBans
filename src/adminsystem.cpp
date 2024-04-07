@@ -583,11 +583,12 @@ CON_COMMAND_CHAT_FLAGS(silence, "<name> <(+)duration> <reason> - mute and gag a 
 		return;
 	}
 
-	int iDuration = args.ArgC() < 3 ? -1 : ParseTimeInput(args[2]);
-
-	if (nType >= ETargetType::ALL || iNumClients > 1)
+	if (iNumClients > 1)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may only silence individuals.");
+		if (nType == ETargetType::PLAYER)
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		else
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may only silence individuals.");
 		return;
 	}
 
@@ -613,6 +614,7 @@ CON_COMMAND_CHAT_FLAGS(silence, "<name> <(+)duration> <reason> - mute and gag a 
 		return;
 	}
 
+	int iDuration = args.ArgC() < 3 ? -1 : ParseTimeInput(args[2]);
 	std::shared_ptr<GFLBans_PlayerObjSimple> plyBadPerson = std::make_shared<GFLBans_PlayerObjSimple>(pTargetPlayer);
 	std::shared_ptr<GFLBans_PlayerObjNoIp> plyAdmin = nullptr;
 	if (player)
@@ -650,9 +652,12 @@ CON_COMMAND_CHAT_FLAGS(unsilence, "<name> <reason> - unmutes and ungags a player
 		return;
 	}
 
-	if (nType >= ETargetType::ALL || iNumClients > 1)
+	if (iNumClients > 1)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may only unsilence individuals.");
+		if (nType == ETargetType::PLAYER)
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		else
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may only unsilence individuals.");
 		return;
 	}
 
@@ -970,6 +975,12 @@ CON_COMMAND_CHAT_FLAGS(bringct, "<name> - bring a human", ADMFLAG_SLAY)
 	int pSlots[MAXPLAYERS];
 
 	ETargetType nType = g_playerManager->TargetPlayerString(player->GetPlayerSlot(), args[1], iNumClients, pSlots);
+
+	if (nType == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		return;
+	}
 
 	if (!iNumClients || nType == ETargetType::T || nType == ETargetType::RANDOM_T)
 	{
@@ -1988,13 +1999,15 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 	int iCommandPlayer = player->GetPlayerSlot();
 	int iNumClients = 0;
 	int pSlot[MAXPLAYERS];
-
-	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) > ETargetType::PLAYER || iNumClients > 1)
+	ETargetType nType = g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot);
+	if (iNumClients > 1)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You can only report individual players.");
+		if (nType == ETargetType::PLAYER)
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		else
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You can only report individual players.");
 		return;
 	}
-
 	if (!iNumClients)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Player not found.");
@@ -2283,12 +2296,16 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 		pSlot[0] = iCommandPlayer;
 	}
 
+
 	if (iNumClients > 1)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You can only target individual players for listing punishments.");
+		if (nType == ETargetType::PLAYER)
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		else
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You can only target individual players for listing punishments.");
 		return;
 	}
-	else if (iNumClients <= 0)
+	if (iNumClients <= 0)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
 		return;
