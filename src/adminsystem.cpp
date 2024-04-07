@@ -125,23 +125,29 @@ CON_COMMAND_CHAT_FLAGS(ban, "<name> <duration> <reason> - ban a player", ADMFLAG
 	int iNumClients = 0;
 	int pSlot[MAXPLAYERS];
 
-	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) > ETargetType::PLAYER || iNumClients > 1)
+	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) > ETargetType::PLAYER)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You can only target individual players for banning.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You can only target individual players for banning.");
 		return;
 	}
 
 	if (!iNumClients)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Target not found.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
+		return;
+	}
+
+	if (iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
 		return;
 	}
 
 	int iDuration = ParseTimeInput(args[2]);
 
-	if (iDuration == -1)
+	if (iDuration < 0)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Invalid duration.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Invalid duration.");
 		return;
 	}
 	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[0]);
@@ -192,8 +198,13 @@ CON_COMMAND_CHAT_FLAGS(mute, "<name> <(+)duration> <reason> - mutes a player", A
 		return;
 	}
 
-	int iDuration = args.ArgC() < 3 ? -1 : ParseTimeInput(args[2]);
+	if (nType == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		return;
+	}
 
+	int iDuration = ParseTimeInput(args[2]);
 	if (iDuration == 0 && nType >= ETargetType::ALL)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may only permanently mute individuals.");
@@ -294,6 +305,12 @@ CON_COMMAND_CHAT_FLAGS(unmute, "<name> <reason> - unmutes a player", ADMFLAG_CHA
 		return;
 	}
 
+	if (nType == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		return;
+	}
+
 	if (nType == ETargetType::RANDOM || nType == ETargetType::RANDOM_T || nType == ETargetType::RANDOM_CT)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You may not unmute random players.");
@@ -374,6 +391,11 @@ CON_COMMAND_CHAT_FLAGS(gag, "<name> <(+)duration> <reason> - gag a player", ADMF
 		return;
 	}
 
+	if (nType == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		return;
+	}
 	int iDuration = args.ArgC() < 3 ? -1 : ParseTimeInput(args[2]);
 
 	if (iDuration == 0 && nType >= ETargetType::ALL)
@@ -472,6 +494,12 @@ CON_COMMAND_CHAT_FLAGS(ungag, "<name> <reason> - ungags a player", ADMFLAG_CHAT)
 	if (!iNumClients)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
+		return;
+	}
+
+	if (nType == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
 		return;
 	}
 
@@ -684,11 +712,15 @@ CON_COMMAND_CHAT_FLAGS(kick, "<name> - kick a player", ADMFLAG_KICK)
 			dcReason = NETWORK_DISCONNECT_KICKED_IDLE;
 	}
 
-	g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot);
+	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		return;
+	}
 
 	if (!iNumClients)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Target not found.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
 		return;
 	}
 
@@ -727,7 +759,13 @@ CON_COMMAND_CHAT_FLAGS(slay, "<name> - slay a player", ADMFLAG_SLAY)
 
 	if (!iNumClients)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Target not found.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
+		return;
+	}
+
+	if (nType == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
 		return;
 	}
 
@@ -769,6 +807,12 @@ CON_COMMAND_CHAT_FLAGS(slap, "<name> [damage] - slap a player", ADMFLAG_SLAY)
 		return;
 	}
 
+	if (nType == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		return;
+	}
+
 	const char *pszCommandPlayerName = player ? player->GetPlayerName() : "Console";
 
 	for (int i = 0; i < iNumClients; i++)
@@ -790,12 +834,22 @@ CON_COMMAND_CHAT_FLAGS(slap, "<name> [damage] - slap a player", ADMFLAG_SLAY)
 		velocity.z += rand() % 200 + 100;
 		pPawn->SetAbsVelocity(velocity);
 
-		int iDamage = V_StringToInt32(args[2], 0);
 		CSingleRecipientFilter filter(pTarget->GetPlayerSlot());
 		CCSPlayerController::FromSlot(pTarget->GetPlayerSlot())->EmitSoundFilter(filter, "Player.DamageFall");
 
-		if (iDamage > 0)
-			pPawn->TakeDamage(iDamage);
+		float flDamage = V_StringToFloat32 (args[2], 0);
+			
+		if (flDamage > 0)
+		{
+			// Default to the world
+			Z_CBaseEntity *pAttacker = (Z_CBaseEntity*)g_pEntitySystem->GetBaseEntity(CEntityIndex(0));
+
+			if (player)
+				pAttacker = player->GetPlayerPawn();
+
+			CTakeDamageInfo info(pAttacker, pAttacker, nullptr, flDamage, DMG_GENERIC);
+			pPawn->TakeDamage(info);
+		}
 
 		if (nType < ETargetType::ALL)
 			PrintSingleAdminAction(pszCommandPlayerName, pTarget->GetPlayerName(), "slapped");
@@ -871,6 +925,12 @@ CON_COMMAND_CHAT_FLAGS(bring, "<name> - bring a player", ADMFLAG_SLAY)
 	if (!iNumClients)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
+		return;
+	}
+
+	if (nType == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
 		return;
 	}
 
@@ -960,6 +1020,12 @@ CON_COMMAND_CHAT_FLAGS(setteam, "<name> <team (0-3)> - set a player's team", ADM
 	if (!iNumClients)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
+		return;
+	}
+
+	if (nType == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
 		return;
 	}
 
@@ -1112,6 +1178,12 @@ CON_COMMAND_CHAT_FLAGS(entfirepawn, "<name> <inpu> [parameter] - fire outputs at
 		return;
 	}
 
+	if (nType == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		return;
+	}
+
 	int iFoundEnts = 0;
 
 	for (int i = 0; i < iNumClients; i++)
@@ -1148,6 +1220,12 @@ CON_COMMAND_CHAT_FLAGS(entfirecontroller, "<name> <input> [parameter] - fire out
 		return;
 	}
 
+	if (nType == ETargetType::PLAYER && iNumClients > 1)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
+		return;
+	}
+
 	int iFoundEnts = 0;
 
 	for (int i = 0; i < iNumClients; i++)
@@ -1168,7 +1246,7 @@ CON_COMMAND_CHAT_FLAGS(map, "<mapname> - change map", ADMFLAG_CHANGEMAP)
 {
 	if (args.ArgC() < 2)
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Usage: !map <mapname>");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !map <mapname>");
 		return;
 	}
 
@@ -1314,7 +1392,7 @@ CON_COMMAND_CHAT_FLAGS(pm, "<name> <message> - Private message a player. This wi
 
 	ZEPlayer* pTargetPlayer = pTarget->GetZEPlayer();
 
-	std::string strMessage = GetReason(args, 1);
+	std::string strMessage = GetReason(args, 1, false);
 
 	const char* pszName = player ? player->GetPlayerName() : "CONSOLE";
 
@@ -3527,7 +3605,7 @@ int ParseTimeInput(std::string strTime)
 	}
 }
 
-std::string GetReason(const CCommand& args, int iArgsBefore)
+std::string GetReason(const CCommand& args, int iArgsBefore, bool bStripUnicode)
 {
 	if (args.ArgC() <= iArgsBefore + 1)
 		return "";
@@ -3544,9 +3622,11 @@ std::string GetReason(const CCommand& args, int iArgsBefore)
 		strReason = strReason.substr(iToRemove);
 	}
 
-
 	std::string strOutput = "";
-	std::copy_if(strReason.cbegin(), strReason.cend(), std::back_inserter(strOutput), [](unsigned char c) {return c < 128; });
+	if (bStripUnicode)
+		std::copy_if(strReason.cbegin(), strReason.cend(), std::back_inserter(strOutput), [](unsigned char c) {return c < 128; });
+	else
+		strOutput = strReason;
 
 	// Clean up both ends of string very inefficiently...
 	while (strOutput.length() > 0 && (strOutput.at(0) == ' ' || strOutput.at(0) == '\"'))
