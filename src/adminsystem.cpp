@@ -1961,7 +1961,7 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 		return;
 	}
 	
-	ClientPrint(player, HUD_PRINTTALK, " \7[CS2Fixes]\x0B Attempting to report \2%s \x0B(reason: \x09%s\x0B)...", player->GetPlayerName(), strMessage.c_str());
+	ClientPrint(player, HUD_PRINTTALK, " \7[CS2Fixes]\x0B Attempting to report \2%s \x0B(reason: \x09%s\x0B)...", pTarget->GetPlayerName(), strMessage.c_str());
 	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Type \x0E/confirm\1 within 30 seconds to send your pending report. Issuing false reports will result in a\x02 ban\1.");
 	uint64 reportIndex = ply->GetSteamId64();
 	if (g_pAdminSystem->mapPendingReports.find(reportIndex) != g_pAdminSystem->mapPendingReports.end())
