@@ -108,30 +108,6 @@ FAKE_STRING_CVAR(zr_zombie_win_overlay_particle, "Screenspace particle to displa
 FAKE_STRING_CVAR(zr_zombie_win_overlay_material, "Material override for zombie's win overlay particle", g_szZombieWinOverlayMaterial, false)
 FAKE_FLOAT_CVAR(zr_zombie_win_overlay_size, "Size of zombie's win overlay particle", g_flZombieWinOverlaySize, 5.0f, false)
 
-void RemoveBeacon(int playerSlot)
-{
-	ZEPlayer* pPlayer = g_playerManager->GetPlayer(playerSlot);
-
-	if (!pPlayer)
-		return;
-
-	CParticleSystem* pParticle = pPlayer->GetBeaconParticle();
-
-	if (!pParticle)
-		return;
-
-	pParticle->AcceptInput("DestroyImmediately");
-
-	// delayed Kill because default particle is being silly and remains floating if not Destroyed first
-	CHandle<CParticleSystem> hParticle = pParticle->GetHandle();
-	new CTimer(0.02f, false, [hParticle]() {
-		CParticleSystem* particle = hParticle.Get();
-		if (particle)
-			particle->AcceptInput("Kill");
-		return -1.0f;
-	});
-}
-
 void ZR_Precache(IEntityResourceManifest* pResourceManifest)
 {
 	g_pZRPlayerClassManager->PrecacheModels(pResourceManifest);
@@ -815,7 +791,6 @@ void ZR_Cure(CCSPlayerController *pTargetController)
 		return;
 
 	g_pZRPlayerClassManager->ApplyPreferredOrDefaultHumanClass(pTargetPawn);
-	RemoveBeacon(pTargetController->GetPlayerSlot());
 }
 
 float ZR_MoanTimer(CHandle<CCSPlayerPawn> hPawn)
@@ -855,7 +830,6 @@ void ZR_Infect(CCSPlayerController *pAttackerController, CCSPlayerController *pV
 
 	CHandle<CCSPlayerPawn> hPawn = pVictimPawn->GetHandle();
 	new CTimer(g_flMoanInterval + (rand() % 5), false, [hPawn]() { return ZR_MoanTimer(hPawn); });
-	RemoveBeacon(pVictimController->GetPlayerSlot());
 }
 
 void ZR_InfectMotherZombie(CCSPlayerController *pVictimController)
@@ -877,7 +851,6 @@ void ZR_InfectMotherZombie(CCSPlayerController *pVictimController)
 
 	CHandle<CCSPlayerPawn> hPawn = pVictimPawn->GetHandle();
 	new CTimer(g_flMoanInterval + (rand() % 5), false, [hPawn]() { return ZR_MoanTimer(hPawn); });
-	RemoveBeacon(pVictimController->GetPlayerSlot());
 }
 
 // make players who've been picked as MZ recently less likely to be picked again
