@@ -339,8 +339,6 @@ private:
 
 extern CAdminSystem *g_pAdminSystem;
 
-void PrecacheAdminBeaconParticle(IEntityResourceManifest* pResourceManifest);
-
 // Prints out a formatted list of punishments to the player's console.
 // Does not include session punishments, as GFLBans will not return those.
 void ConsoleListPunishments(CCSPlayerController* const player, json punishments);

@@ -19,27 +19,24 @@
 
 #pragma once
 
+#include "../schema.h"
 #include "cbaseentity.h"
-#include "globaltypes.h"
 
-class CBaseModelEntity : public Z_CBaseEntity
+class CLogicCase : public Z_CBaseEntity
 {
 public:
-	DECLARE_SCHEMA_CLASS(CBaseModelEntity);
+    DECLARE_SCHEMA_CLASS(CLogicCase)
+};
 
-	SCHEMA_FIELD(CCollisionProperty , m_Collision)
-	SCHEMA_FIELD(CGlowProperty, m_Glow)
-	SCHEMA_FIELD(Color, m_clrRender)
-	SCHEMA_FIELD(RenderMode_t, m_nRenderMode)
-	SCHEMA_FIELD(float, m_flDissolveStartTime)
-	
-	void SetModel(const char *szModel)
-	{
-		addresses::CBaseModelEntity_SetModel(this, szModel);
-	}
-	
-	const char* GetModelName()
-	{
-		return ((CSkeletonInstance*)m_CBodyComponent->m_pSceneNode.Get())->m_modelState().m_ModelName.Get().String();
-	}
+class CGameUI : public CLogicCase
+{
+public:
+    static constexpr int SF_GAMEUI_FREEZE_PLAYER   = 32;
+    static constexpr int SF_GAMEUI_JUMP_DEACTIVATE = 256;
+
+    // TODO Hide Weapon requires more RE
+    static constexpr int SF_GAMEUI_HIDE_WEAPON = 64;
+
+    // TODO subtick problem
+    static constexpr int SF_GAMEUI_USE_DEACTIVATE = 128;
 };

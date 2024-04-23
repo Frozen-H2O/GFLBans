@@ -113,6 +113,9 @@
     <ClCompile Include="src\entitylistener.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\leader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="sdk\tier1\keyvalues3.cpp">
       <Filter>Source Files\sdk</Filter>
     </ClCompile>
@@ -129,6 +132,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\customio.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="protobuf\generated\cs_usercmd.pb.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="protobuf\generated\usercmd.pb.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\entities.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -247,6 +259,9 @@
     <ClInclude Include="src\entitylistener.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\leader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\cs2_sdk\entity\lights.h">
       <Filter>Header Files\cs2_sdk\entity</Filter>
     </ClInclude>
@@ -282,6 +297,15 @@
     </ClInclude>
     <ClInclude Include="src\serversideclient.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\entities.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\cs2_sdk\entity\cgameplayerequip.h">
+      <Filter>Header Files\cs2_sdk\entity</Filter>
+    </ClInclude>
+    <ClInclude Include="src\cs2_sdk\entity\clogiccase.h">
+      <Filter>Header Files\cs2_sdk\entity</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

@@ -19,27 +19,24 @@
 
 #pragma once
 
-#include "cbaseentity.h"
-#include "globaltypes.h"
+class InputData_t;
+class CGamePlayerEquip;
+class Z_CBaseEntity;
+class CGameUI;
 
-class CBaseModelEntity : public Z_CBaseEntity
+namespace CGamePlayerEquipHandler
 {
-public:
-	DECLARE_SCHEMA_CLASS(CBaseModelEntity);
+void Use(CGamePlayerEquip* pEntity, InputData_t* pInput);
+void TriggerForAllPlayers(CGamePlayerEquip* pEntity, InputData_t* pInput);
+void TriggerForActivatedPlayer(CGamePlayerEquip* pEntity, InputData_t* pInput);
+} // namespace CGamePlayerEquipHandler
 
-	SCHEMA_FIELD(CCollisionProperty , m_Collision)
-	SCHEMA_FIELD(CGlowProperty, m_Glow)
-	SCHEMA_FIELD(Color, m_clrRender)
-	SCHEMA_FIELD(RenderMode_t, m_nRenderMode)
-	SCHEMA_FIELD(float, m_flDissolveStartTime)
-	
-	void SetModel(const char *szModel)
-	{
-		addresses::CBaseModelEntity_SetModel(this, szModel);
-	}
-	
-	const char* GetModelName()
-	{
-		return ((CSkeletonInstance*)m_CBodyComponent->m_pSceneNode.Get())->m_modelState().m_ModelName.Get().String();
-	}
-};
+namespace CGameUIHandler
+{
+bool OnActivate(CGameUI* pEntity, Z_CBaseEntity* pActivator);
+bool OnDeactivate(CGameUI* pEntity, Z_CBaseEntity* pActivator);
+void RunThink(int tick);
+} // namespace CGameUIHandler
+
+void EntityHandler_OnGameFramePre(bool simulate, int tick);
+void EntityHandler_OnGameFramePost(bool simulate, int tick);

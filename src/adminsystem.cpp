@@ -54,10 +54,6 @@ CAdminSystem* g_pAdminSystem = nullptr;
 
 CUtlMap<uint32, CChatCommand *> g_CommandList(0, 0, DefLessFunc(uint32));
 
-static std::string g_sBeaconParticle = "particles/testsystems/test_cross_product.vpcf";
-
-FAKE_STRING_CVAR(cs2f_admin_beacon_particle, ".vpcf file to be precached and used for admin beacon", g_sBeaconParticle, false)
-
 void PrintSingleAdminAction(const char* pszAdminName, const char* pszTargetName, const char* pszAction, const char* pszAction2 = "", const char* prefix = CHAT_PREFIX)
 {
 	ClientPrintAll(HUD_PRINTTALK, "%s" ADMIN_PREFIX "%s %s%s.", prefix, pszAdminName, pszAction, pszTargetName, pszAction2);
@@ -1629,148 +1625,37 @@ CON_COMMAND_CHAT_FLAGS(say, "[count] <message> - Announce an important message t
 	}
 }
 
-void PrecacheAdminBeaconParticle(IEntityResourceManifest* pResourceManifest)
+#ifdef _DEBUG
+CON_COMMAND_CHAT_FLAGS(add_dc, "<name> <SteamID 64> <IP Address> - Adds a fake player to disconnected player list for testing", ADMFLAG_GENERIC)
 {
-	pResourceManifest->AddResource(g_sBeaconParticle.c_str());
-}
-
-void KillBeacon(int playerSlot)
-{
-	ZEPlayer* pPlayer = g_playerManager->GetPlayer(playerSlot);
-
-	if (!pPlayer)
-		return;
-
-	CParticleSystem* pParticle = pPlayer->GetBeaconParticle();
-
-	if (!pParticle)
-		return;
-
-	pParticle->AcceptInput("DestroyImmediately");
-
-	// delayed Kill because default particle is being silly and remains floating if not Destroyed first
-	CHandle<CParticleSystem> hParticle = pParticle->GetHandle();
-	new CTimer(0.02f, false, [hParticle]()
+	if (args.ArgC() < 3)
 	{
-		CParticleSystem* particle = hParticle.Get();
-		if (particle)
-			particle->AcceptInput("Kill");
-		return -1.0f;
-	});
-}
-
-void CreateBeacon(int playerSlot)
-{
-	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(playerSlot);
-
-	Vector vecAbsOrigin = pTarget->GetPawn()->GetAbsOrigin();
-
-	vecAbsOrigin.z += 10;
-
-	CParticleSystem* particle = (CParticleSystem*)CreateEntityByName("info_particle_system");
-
-	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
-
-	pKeyValues->SetString("effect_name", g_sBeaconParticle.c_str());
-	pKeyValues->SetInt("tint_cp", 1);
-	pKeyValues->SetVector("origin", vecAbsOrigin);
-	// ugly angle change because default particle is rotated
-	if (strcmp(g_sBeaconParticle.c_str(), "particles/testsystems/test_cross_product.vpcf") == 0)
-		pKeyValues->SetQAngle("angles", QAngle(90, 0, 0));
-	
-	particle->DispatchSpawn(pKeyValues);
-	particle->SetParent(pTarget->GetPawn());
-
-	ZEPlayer* pPlayer = g_playerManager->GetPlayer(playerSlot);
-	
-	pPlayer->SetBeaconParticle(particle);
-
-	CHandle<CParticleSystem> hParticle = particle->GetHandle();
-
-	// timer persists through map change so serial reset on StartupServer is not needed
-	new CTimer(0.0f, true, [playerSlot, hParticle]()
-	{
-		CCSPlayerController* pPlayer = CCSPlayerController::FromSlot(playerSlot);
-		
-		if (!pPlayer || pPlayer->m_iTeamNum < CS_TEAM_T || !pPlayer->GetPlayerPawn()->IsAlive())
-		{
-			KillBeacon(playerSlot);
-			return -1.0f;
-		}
-
-		CParticleSystem* pParticle = hParticle.Get();
-
-		if (!pParticle)
-		{
-			return -1.0f;
-		}
-
-		// team-based tint of Control Point 1
-		if (pPlayer->m_iTeamNum == CS_TEAM_T)
-			pParticle->m_clrTint->SetColor(185, 93, 63, 255);
-		else
-			pParticle->m_clrTint->SetColor(40, 100, 255, 255);
-		
-		pParticle->AcceptInput("Start");
-		// delayed DestroyImmediately input so particle effect can be replayed (and default particle doesn't bug out)
-		new CTimer(0.5f, false, [hParticle]()
-		{
-			CParticleSystem* particle = hParticle.Get();
-			if (particle)
-				particle->AcceptInput("DestroyImmediately");
-			return -1.0f;
-		});
-
-		return 1.0f;
-	});
-}
-
-void PerformBeacon(int playerSlot)
-{
-	ZEPlayer *pPlayer = g_playerManager->GetPlayer(playerSlot);
-
-	if (!pPlayer->GetBeaconParticle())
-		CreateBeacon(playerSlot);
-	else
-		KillBeacon(playerSlot);
-}
-
-CON_COMMAND_CHAT_FLAGS(beacon, "Toggle beacon on a player", ADMFLAG_GENERIC)
-{
-	if (args.ArgC() < 2)
-	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !beacon <name>");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !add_dc <name> <Steam64 ID> <IP Address>");
 		return;
 	}
 
-	int iCommandPlayer = player ? player->GetPlayerSlot() : -1;
-	int iNumClients = 0;
-	int pSlots[MAXPLAYERS];
-
-	ETargetType nType = g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlots);
-
-	if (!iNumClients)
+	std::string strSteamID = args[2];
+	if (strSteamID.length() != 17 || std::find_if(strSteamID.begin(), strSteamID.end(), [](unsigned char c) { return !std::isdigit(c); }) != strSteamID.end())
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Invalid Steam64 ID.");
 		return;
 	}
+	// stoll should be exception safe with above check
+	uint64 iSteamID = std::stoll(strSteamID);
 
-	const char *pszCommandPlayerName = player ? player->GetPlayerName() : "Console";
+	g_pAdminSystem->AddDisconnectedPlayer(args[1], iSteamID, args[3]);
+}
+#endif
 
-	for (int i = 0; i < iNumClients; i++)
-	{
-		CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlots[i]);
+CAdminSystem::CAdminSystem()
+{
+	LoadAdmins();
+	LoadInfractions();
 
-		if (!pTarget)
-			continue;
-
-		PerformBeacon(pSlots[i]);
-
-		if (nType < ETargetType::ALL)
-			PrintSingleAdminAction(pszCommandPlayerName, pTarget->GetPlayerName(), "toggled beacon on");
-	}
-
-	PrintMultiAdminAction(nType, pszCommandPlayerName, "toggled beacon on");
+	// Fill out disconnected player list with empty objects which we overwrite as players leave
+	for (int i = 0; i < 20; i++)
+		m_rgDCPly[i] = std::tuple<std::string, uint64, std::string>("", 0, "");
+	m_iDCPlyIndex = 0;
 }
 
 bool CAdminSystem::LoadAdmins()

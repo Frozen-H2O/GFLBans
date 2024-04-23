@@ -30,6 +30,7 @@
 #include "user_preferences.h"
 #include "customio.h"
 #include <sstream>
+#include "leader.h"
 
 #include "tier0/memdbgon.h"
 
@@ -121,39 +122,25 @@ void ZR_Precache(IEntityResourceManifest* pResourceManifest)
 	pResourceManifest->AddResource("soundevents/soundevents_zr.vsndevts");
 }
 
-CEnvParticleGlow* ZR_CreateOverlay(const char* pszOverlayParticlePath, float flAlpha, float flRadius, float flSelfIllum, float flLifeTime, Color clrTint, const char* pszMaterialOverride)
+void ZR_CreateOverlay(const char* pszOverlayParticlePath, float flAlpha, float flRadius, float flLifeTime, Color clrTint, const char* pszMaterialOverride)
 {
 	CEnvParticleGlow* particle = (CEnvParticleGlow*)CreateEntityByName("env_particle_glow");
 
 	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
 
 	pKeyValues->SetString("effect_name", pszOverlayParticlePath);
-	pKeyValues->SetFloat("alphascale", flAlpha);
-	pKeyValues->SetFloat("scale", flRadius);
-	pKeyValues->SetFloat("selfillumscale", flSelfIllum);
-	pKeyValues->SetColor("colortint", clrTint);
+	// these properties are mapped to control point position by the entity
+	pKeyValues->SetFloat("alphascale", flAlpha);		//17.x
+	pKeyValues->SetFloat("scale", flRadius);			//17.y
+	pKeyValues->SetFloat("selfillumscale", flLifeTime); //17.z
+	pKeyValues->SetColor("colortint", clrTint);			//16.xyz
+
 	pKeyValues->SetString("effect_textureOverride", pszMaterialOverride);
 
 	particle->DispatchSpawn(pKeyValues);
 	particle->AcceptInput("Start");
 
-	CHandle<CEnvParticleGlow> hParticle = particle->GetHandle();
-
-	// destroy particle first, then kill the entity
-	new CTimer(flLifeTime, false, [hParticle]()
-	{
-		CEnvParticleGlow* particle = hParticle.Get();
-
-		//Note: for simple_overlay, if the entity is somehow killed before the particle is destroyed, it will stay on forever until the round reset, which doesn't matter in this specific use case
-		if (particle)
-		{
-			particle->AcceptInput("DestroyImmediately");
-			UTIL_AddEntityIOEvent(particle, "Kill", nullptr, nullptr, "", 0.02f);
-		}
-		return -1.0f;
-	});
-
-	return particle;
+	UTIL_AddEntityIOEvent(particle, "Kill", nullptr, nullptr, "", flLifeTime + 1.0);
 }
 
 bool ZRClass::IsApplicableTo(CCSPlayerController *pController)
@@ -359,6 +346,20 @@ void CZRPlayerClassManager::ApplyBaseClass(ZRClass* pClass, CCSPlayerPawn *pPawn
 	UTIL_AddEntityIOEvent(pPawn, "SetScale", nullptr, nullptr, pClass->flScale);
 }
 
+// only changes that should not (directly) affect gameplay
+void CZRPlayerClassManager::ApplyBaseClassVisuals(ZRClass *pClass, CCSPlayerPawn *pPawn)
+{
+	Color clrRender;
+	V_StringToColor(pClass->szColor.c_str(), clrRender);
+	
+	pPawn->SetModel(pClass->szModelPath.c_str());
+	pPawn->m_clrRender = clrRender;
+	pPawn->AcceptInput("Skin", pClass->iSkin);
+
+	// This has to be done a bit later
+	UTIL_AddEntityIOEvent(pPawn, "SetScale", nullptr, nullptr, pClass->flScale);
+}
+
 ZRHumanClass* CZRPlayerClassManager::GetHumanClass(const char *pszClassName)
 {
 	uint16 index = m_HumanClassMap.Find(hash_32_fnv1a_const(pszClassName));
@@ -373,6 +374,19 @@ void CZRPlayerClassManager::ApplyHumanClass(ZRHumanClass *pClass, CCSPlayerPawn 
 	CCSPlayerController *pController = CCSPlayerController::FromPawn(pPawn);
 	if (pController)
 		CZRRegenTimer::StopRegen(pController);
+	
+	if (!g_bEnableLeader || !pController)
+		return;
+	
+	ZEPlayer *pPlayer = g_playerManager->GetPlayer(pController->GetPlayerSlot());
+
+	if (pPlayer && pPlayer->IsLeader())
+		new CTimer(0.02f, false, [pPawn]()
+		{
+			if (pPawn)
+				Leader_ApplyLeaderVisuals(pPawn);
+			return -1.0f;
+		});
 }
 
 void CZRPlayerClassManager::ApplyPreferredOrDefaultHumanClass(CCSPlayerPawn *pPawn)
@@ -397,6 +411,30 @@ void CZRPlayerClassManager::ApplyPreferredOrDefaultHumanClass(CCSPlayerPawn *pPa
 	}
 	
 	ApplyHumanClass(humanClass, pPawn);
+}
+
+void CZRPlayerClassManager::ApplyPreferredOrDefaultHumanClassVisuals(CCSPlayerPawn *pPawn)
+{
+	CCSPlayerController *pController = CCSPlayerController::FromPawn(pPawn);
+	if (!pController) return;
+
+	// Get the human class user preference, or default if no class is set
+	int iSlot = pController->GetPlayerSlot();
+	ZRHumanClass* humanClass = nullptr;
+	const char* sPreferredHumanClass = g_pUserPreferencesSystem->GetPreference(iSlot, HUMAN_CLASS_KEY_NAME);
+
+	// If the preferred human class exists and can be applied, override the default
+	uint16 index = m_HumanClassMap.Find(hash_32_fnv1a_const(sPreferredHumanClass));
+	if (m_HumanClassMap.IsValidIndex(index) && m_HumanClassMap[index]->IsApplicableTo(pController)) {
+		humanClass = m_HumanClassMap[index];
+	} else if (m_vecHumanDefaultClass.Count()) {
+		humanClass = m_vecHumanDefaultClass[rand() % m_vecHumanDefaultClass.Count()];
+	} else if (!humanClass) {
+		Warning("Missing default human class or valid preferences!\n");
+		return;
+	}
+
+	ApplyBaseClassVisuals((ZRClass *)humanClass, pPawn);
 }
 
 ZRZombieClass* CZRPlayerClassManager::GetZombieClass(const char *pszClassName)
@@ -681,8 +719,14 @@ void ZR_OnPlayerSpawn(IGameEvent* pEvent)
 		bool bInfect = g_ZRRoundState == EZRRoundState::POST_INFECTION;
 
 		// We're infecting this guy with a delay, disable all damage as they have 100 hp until then
-		if (bInfect)
+		// also set team immediately in case the spawn teleport is team filtered
+		if (bInfect) 
+		{
 			pController->GetPawn()->m_bTakesDamage(false);
+			pController->SwitchTeam(CS_TEAM_T);
+		}
+		else
+			pController->SwitchTeam(CS_TEAM_CT);
 
 		CHandle<CCSPlayerController> handle = pController->GetHandle();
 		new CTimer(0.05f, false, [iRoundNum, handle, bInfect]()
@@ -807,6 +851,10 @@ float ZR_MoanTimer(CHandle<CCSPlayerPawn> hPawn)
 
 void ZR_Infect(CCSPlayerController *pAttackerController, CCSPlayerController *pVictimController, bool bDontBroadcast)
 {
+	// This can be null if the victim disconnected right before getting hit AND someone joined in their place immediately, thus replacing the controller
+	if (!pVictimController)
+		return;
+
 	if (pVictimController->m_iTeamNum() == CS_TEAM_CT)
 		pVictimController->SwitchTeam(CS_TEAM_T);
 
@@ -1033,7 +1081,7 @@ bool ZR_Detour_TakeDamageOld(CCSPlayerPawn *pVictimPawn, CTakeDamageInfo *pInfo)
 	}
 
 	if (g_iGroanChance && pVictimPawn->m_iTeamNum() == CS_TEAM_T && (rand() % g_iGroanChance) == 1)
-		pVictimController->GetPawn()->EmitSound("zr.amb.zombie_pain");
+		pVictimPawn->EmitSound("zr.amb.zombie_pain");
 
 	// grenade and molotov knockback
 	if (pAttackerPawn->m_iTeamNum() == CS_TEAM_CT && pVictimPawn->m_iTeamNum() == CS_TEAM_T)
@@ -1299,7 +1347,7 @@ void ZR_EndRoundAndAddTeamScore(int iTeamNum)
 		}
 		g_hTeamCT->m_iScore = g_hTeamCT->m_iScore() + 1;
 		if (!g_szHumanWinOverlayParticle.empty())
-			ZR_CreateOverlay(g_szHumanWinOverlayParticle.c_str(), 1.0f, g_flHumanWinOverlaySize, 1.0f, flRestartDelay, Color(255, 255, 255), g_szHumanWinOverlayMaterial.c_str());
+			ZR_CreateOverlay(g_szHumanWinOverlayParticle.c_str(), 1.0f, g_flHumanWinOverlaySize, flRestartDelay, Color(255, 255, 255), g_szHumanWinOverlayMaterial.c_str());
 	}
 	else if (iTeamNum == CS_TEAM_T)
 	{	
@@ -1310,7 +1358,7 @@ void ZR_EndRoundAndAddTeamScore(int iTeamNum)
 		}
 		g_hTeamT->m_iScore = g_hTeamT->m_iScore() + 1;
 		if (!g_szZombieWinOverlayParticle.empty())
-			ZR_CreateOverlay(g_szZombieWinOverlayParticle.c_str(), 1.0f, g_flZombieWinOverlaySize, 1.0f, flRestartDelay, Color(255, 255, 255), g_szZombieWinOverlayMaterial.c_str());
+			ZR_CreateOverlay(g_szZombieWinOverlayParticle.c_str(), 1.0f, g_flZombieWinOverlaySize, flRestartDelay, Color(255, 255, 255), g_szZombieWinOverlayMaterial.c_str());
 	}
 }
 

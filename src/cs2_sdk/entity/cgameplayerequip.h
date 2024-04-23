@@ -19,27 +19,20 @@
 
 #pragma once
 
+#include "../schema.h"
 #include "cbaseentity.h"
-#include "globaltypes.h"
 
-class CBaseModelEntity : public Z_CBaseEntity
+class CGamePlayerEquip : public Z_CBaseEntity
 {
+	DECLARE_SCHEMA_CLASS(CGamePlayerEquip)
 public:
-	DECLARE_SCHEMA_CLASS(CBaseModelEntity);
 
-	SCHEMA_FIELD(CCollisionProperty , m_Collision)
-	SCHEMA_FIELD(CGlowProperty, m_Glow)
-	SCHEMA_FIELD(Color, m_clrRender)
-	SCHEMA_FIELD(RenderMode_t, m_nRenderMode)
-	SCHEMA_FIELD(float, m_flDissolveStartTime)
-	
-	void SetModel(const char *szModel)
-	{
-		addresses::CBaseModelEntity_SetModel(this, szModel);
-	}
-	
-	const char* GetModelName()
-	{
-		return ((CSkeletonInstance*)m_CBodyComponent->m_pSceneNode.Get())->m_modelState().m_ModelName.Get().String();
-	}
+    static constexpr int MAX_EQUIPMENTS_SIZE          = 32;
+
+    static constexpr int SF_PLAYEREQUIP_USEONLY       = 0x0001;
+    static constexpr int SF_PLAYEREQUIP_STRIPFIRST    = 0x0002;
+
+    // TODO this flag copied from CSGO, and impl on FyS server. but CS2Fixes not support aws currently.
+    // Add it in the future.
+    static constexpr int SF_PLAYEREQUIP_ONLYSTRIPSAME = 0x0004; 
 };

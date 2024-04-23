@@ -26,6 +26,8 @@
 #include "entity/cgamerules.h"
 #include "zombiereborn.h"
 #include "votemanager.h"
+#include "leader.h"
+#include "recipientfilters.h"
 
 #include "tier0/memdbgon.h"
 
@@ -138,7 +140,7 @@ GAME_EVENT_F(player_hurt)
 	CCSPlayerController *pVictim = (CCSPlayerController*)pEvent->GetPlayerController("userid");
 
 	// Ignore Ts/zombies and CTs hurting themselves
-	if (!pAttacker || pAttacker->m_iTeamNum() != CS_TEAM_CT || pAttacker == pVictim)
+	if (!pAttacker || pAttacker->m_iTeamNum() != CS_TEAM_CT || pAttacker->m_iTeamNum() == pVictim->m_iTeamNum())
 		return;
 
 	ZEPlayer* pPlayer = pAttacker->GetZEPlayer();
@@ -177,6 +179,9 @@ GAME_EVENT_F(round_start)
 {
 	if (g_bEnableZR)
 		ZR_OnRoundStart(pEvent);
+
+	if (g_bEnableLeader)
+		Leader_OnRoundStart(pEvent);
 
 	if (!g_bEnableTopDefender)
 		return;
@@ -272,4 +277,10 @@ GAME_EVENT_F(round_time_warning)
 {
 	if (g_bEnableZR)
 		ZR_OnRoundTimeWarning(pEvent);
+}
+
+GAME_EVENT_F(bullet_impact)
+{
+	if (g_bEnableLeader)
+		Leader_BulletImpact(pEvent);
 }
