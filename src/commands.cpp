@@ -449,65 +449,6 @@ CON_COMMAND_CHAT(help, "- Display list of commands in console")
 		ClientPrint(player, HUD_PRINTCONSOLE, "! can be replaced with / for a silent chat command, or c_ for console usage");
 }
 
-CON_COMMAND_CHAT(getpos, "- dump your position and angles")
-{
-	if (!player)
-		return;
-
-	Vector vecAbsOrigin = player->GetPawn()->GetAbsOrigin();
-	QAngle angRotation = player->GetPawn()->GetAbsRotation();
-
-	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "setpos %f %f %f;setang %f %f %f", vecAbsOrigin.x, vecAbsOrigin.y, vecAbsOrigin.z, angRotation.x, angRotation.y, angRotation.z);
-	ClientPrint(player, HUD_PRINTCONSOLE, "setpos %f %f %f;setang %f %f %f", vecAbsOrigin.x, vecAbsOrigin.y, vecAbsOrigin.z, angRotation.x, angRotation.y, angRotation.z);
-}
-
-CON_COMMAND_CHAT(showteam, "<name> - Get a player's current team")
-{
-	if (args.ArgC() < 2)
-	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !showteam <name>");
-		return;
-	}
-
-	int iNumClients = 0;
-	int pSlots[MAXPLAYERS];
-
-	ETargetType nType = g_playerManager->TargetPlayerString(player->GetPlayerSlot(), args[1], iNumClients, pSlots);
-
-	if (iNumClients > 1)
-	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "More than one client matched.");
-		return;
-	}
-
-	if (!iNumClients)
-	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
-		return;
-	}
-
-	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlots[0]);
-
-	if (!pTarget)
-		return;
-
-	switch (pTarget->m_iTeamNum())
-	{
-		case CS_TEAM_SPECTATOR:
-			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s is a\x08 spectator\x01.", pTarget->GetPlayerName());
-			break;
-		case CS_TEAM_T:
-			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s is a\x09 zombie\x01.", pTarget->GetPlayerName());
-			break;
-		case CS_TEAM_CT:
-			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s is a\x0B human\x01.", pTarget->GetPlayerName());
-			break;
-		default:
-			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "%s is not on a team.", pTarget->GetPlayerName());
-	}
-}
-
-
 #if _DEBUG
 CON_COMMAND_CHAT(myuid, "- test")
 {

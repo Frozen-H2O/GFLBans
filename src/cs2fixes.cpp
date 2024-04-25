@@ -41,6 +41,7 @@
 #include "commands.h"
 #include "eventlistener.h"
 #include "gameconfig.h"
+#include "gflbans.h"
 #include "votemanager.h"
 #include "zombiereborn.h"
 #include "httpmanager.h"
@@ -256,6 +257,7 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, bool
 	g_pUserPreferencesStorage = new CUserPreferencesREST();
 	g_pZRWeaponConfig = new ZRWeaponConfig();
 	g_pEntityListener = new CEntityListener();
+	g_pGFLBansSystem = new GFLBansSystem();
 
 	RegisterWeaponCommands();
 
@@ -275,7 +277,7 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, bool
 
 	// Check for the expiration of infractions like mutes or gags
 	new CTimer(60.0f, true, []() {
-		g_pAdminSystem->GFLBans_Heartbeat();
+		g_pGFLBansSystem->GFLBans_Heartbeat();
 		return 60.0f;
 	});
 
@@ -319,6 +321,9 @@ bool CS2Fixes::Unload(char *error, size_t maxlen)
 	if (g_pAdminSystem)
 		delete g_pAdminSystem;
 
+	if (g_pGFLBansSystem)
+		delete g_pGFLBansSystem;
+
 	if (g_pDiscordBotManager)
 		delete g_pDiscordBotManager;
 
@@ -360,9 +365,10 @@ void CS2Fixes::Hook_DispatchConCommand(ConCommandHandle cmdHandle, const CComman
 	{
 		auto pController = CCSPlayerController::FromSlot(iCommandPlayerSlot);
 		bool bGagged = pController && pController->GetZEPlayer()->IsGagged();
+		bool bAdminChatGagged = pController && pController->GetZEPlayer()->IsAdminChatGagged();
 		bool bFlooding = pController && pController->GetZEPlayer()->IsFlooding();
 		bool bAdminChat = *args[1] == '@';
-		bool bSilent = *args[1] == '/' || bAdminChat || (!bGagged && g_pAdminSystem->FilterMessage(pController, args));
+		bool bSilent = *args[1] == '/' || bAdminChat || (!bGagged && g_pGFLBansSystem->FilterMessage(pController, args));
 		bool bCommand = *args[1] == '!' || *args[1] == '/';
 
 		// Chat messages should generate events regardless
@@ -389,7 +395,7 @@ void CS2Fixes::Hook_DispatchConCommand(ConCommandHandle cmdHandle, const CComman
 			if (pController)
 				ClientPrint(pController, HUD_PRINTTALK, CHAT_PREFIX "You are flooding the server!");
 		}
-		else if (bAdminChat) // Admin chat can be sent by anyone but only seen by admins, use flood protection here too
+		else if (bAdminChat && !bAdminChatGagged) // Admin chat can be sent by anyone but only seen by admins, use flood protection here too
 		{
 			// HACK: At this point, we can safely modify the arg buffer as it won't be passed anywhere else
 			// The string here is originally ("@foo bar"), trim it to be (foo bar)
@@ -460,7 +466,7 @@ void CS2Fixes::Hook_StartupServer(const GameSessionConfiguration_t& config, ISou
 
 	// Run a heartbeat on map change to update web, while removing local punishments
 	new CTimer(5.0f, true, []() {
-		if (g_pAdminSystem->GFLBans_Heartbeat())
+		if (g_pGFLBansSystem->GFLBans_Heartbeat())
 		{
 			g_pAdminSystem->RemoveSessionPunishments();
 			return -1.0f;

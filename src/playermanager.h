@@ -95,6 +95,7 @@ public:
 		m_iAdminFlags = 0;
 		m_SteamID = nullptr;
 		m_bGagged = false;
+		m_bAdminChatGagged = false;
 		m_bMuted = false;
 		m_iHideDistance = 0;
 		m_bConnected = false;
@@ -145,6 +146,7 @@ public:
 	void SetPlayerSlot(CPlayerSlot slot) { m_slot = slot; }
 	void SetMuted(bool muted) { m_bMuted = muted; }
 	void SetGagged(bool gagged) { m_bGagged = gagged; }
+	void SetAdminChatGagged(bool adminChatGagged) { m_bAdminChatGagged = adminChatGagged; }
 	void SetTransmit(int index, bool shouldTransmit) { shouldTransmit ? m_shouldTransmit.Set(index) : m_shouldTransmit.Clear(index); }
 	void ClearTransmit() { m_shouldTransmit.ClearAll(); }
 	void SetHideDistance(int distance);
@@ -171,6 +173,7 @@ public:
 
 	bool IsMuted() { return m_bMuted; }
 	bool IsGagged() { return m_bGagged; }
+	bool IsAdminChatGagged() { return m_bAdminChatGagged; }
 	bool ShouldBlockTransmit(int index) { return m_shouldTransmit.Get(index); }
 	int GetHideDistance();
 	CPlayerSlot GetPlayerSlot() { return m_slot; }
@@ -220,6 +223,7 @@ private:
 	bool m_bFakeClient;
 	bool m_bMuted;
 	bool m_bGagged;
+	bool m_bAdminChatGagged;
 	uint64 m_iAdminFlags;
 	int m_iHideDistance;
 	CBitVec<MAXPLAYERS> m_shouldTransmit;

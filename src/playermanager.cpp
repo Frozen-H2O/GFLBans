@@ -30,6 +30,7 @@
 #include "ctimer.h"
 #include "ctime"
 #include "leader.h"
+#include "gflbans.h"
 
 #define VPROF_ENABLED
 #include "tier0/vprof.h"
@@ -40,6 +41,7 @@
 extern IVEngineServer2 *g_pEngineServer2;
 extern CGameEntitySystem *g_pEntitySystem;
 extern CGlobalVars *gpGlobals;
+extern GFLBansSystem *g_pGFLBansSystem;
 
 extern CServerSideClient *GetClientBySlot(CPlayerSlot slot);
 
@@ -101,7 +103,7 @@ void ZEPlayer::OnAuthenticated()
 
 void ZEPlayer::CheckInfractions()
 {
-	g_pAdminSystem->GFLBans_CheckPlayerInfractions(this);
+	g_pGFLBansSystem->GFLBans_CheckPlayerInfractions(this);
 }
 
 void ZEPlayer::CheckAdmin()
