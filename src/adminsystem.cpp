@@ -33,8 +33,10 @@
 #include "entity/cparticlesystem.h"
 #include "entity/cgamerules.h"
 #include "gamesystem.h"
-#include "gflbans.h"
+#include "votemanager.h"
+#include "map_votes.h"
 #include <vector>
+#include "gflbans.h"
 
 extern IVEngineServer2 *g_pEngineServer2;
 extern CGameEntitySystem *g_pEntitySystem;
@@ -169,6 +171,30 @@ CON_COMMAND_CHAT_FLAGS(ban, "<name> <minutes|0 (permament)> - ban a player", ADM
 		PrintSingleAdminAction(pszCommandPlayerName, pTarget->GetPlayerName(), "banned", (" for " + FormatTime(iDuration, false)).c_str());
 	else
 		PrintSingleAdminAction(pszCommandPlayerName, pTarget->GetPlayerName(), "permanently banned");
+}
+
+CON_COMMAND_CHAT_FLAGS(unban, "<steamid64> - unbans a player. Takes decimal STEAMID64", ADMFLAG_BAN)
+{
+	if (args.ArgC() < 2)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !unban <steamid64>");
+		return;
+	}
+
+	uint64 iTargetSteamId64 = V_StringToUint64(args[1], 0);
+
+	bool bResult = g_pAdminSystem->FindAndRemoveInfractionSteamId64(iTargetSteamId64, CInfractionBase::Ban);
+
+	if (!bResult)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Couldn't find user with STEAMID64 <%llu> in ban infractions.", iTargetSteamId64);
+		return;		
+	}
+
+	g_pAdminSystem->SaveInfractions();
+
+	// no need to broadcast this
+	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "User with STEAMID64 <%llu> has been unbanned.", iTargetSteamId64);
 }
 
 CON_COMMAND_CHAT_FLAGS(mute, "<name> <duration|0 (permament)> - mutes a player", ADMFLAG_CHAT)
@@ -949,11 +975,31 @@ CON_COMMAND_CHAT_FLAGS(map, "<mapname> - change map", ADMFLAG_CHANGEMAP)
 
 	if (!g_pEngineServer2->IsMapValid(args[1]))
 	{
-		// This might be a workshop map, and right now there's no easy way to get the list from a collection
-		// So blindly attempt the change for now, as the command does nothing if the map isn't found
-		std::string sCommand = "ds_workshop_changelevel " + std::string(args[1]);
+		// Injection prevention, because we pass user input to ServerCommand
+		for (int i = 0; i < strlen(args[1]); i++)
+		{
+			if (args[1][i] == ';')
+				return;
+		}
 
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Attempting a map change to %s from the workshop collection...", args[1]);
+		std::string sCommand;
+
+		// Check if input is numeric (workshop ID)
+		// Not safe to expose until crashing on failed workshop addon downloads is fixed
+		/*if (V_StringToUint64(args[1], 0) != 0)
+		{
+			sCommand = "host_workshop_map " + std::string(args[1]);
+		}*/
+		if (g_bVoteManagerEnable && g_pMapVoteSystem->GetMapIndexFromSubstring(args[1]) != -1)
+		{
+			sCommand = "host_workshop_map " + std::to_string(g_pMapVoteSystem->GetMapWorkshopId(g_pMapVoteSystem->GetMapIndexFromSubstring(args[1])));
+		}
+		else
+		{
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Failed to find a map matching %s.", args[1]);
+			return;
+		}
+
 		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX "Changing map to %s...", args[1]);
 
 		new CTimer(5.0f, false, [sCommand]()
@@ -1592,6 +1638,21 @@ bool CAdminSystem::FindAndRemoveInfraction(ZEPlayer *player, CInfractionBase::EI
 		}
 	}
 	return bRemovedPunishment;
+}
+
+bool CAdminSystem::FindAndRemoveInfractionSteamId64(uint64 steamid64, CInfractionBase::EInfractionType type)
+{
+	FOR_EACH_VEC(m_vecInfractions, i)
+	{
+		if (m_vecInfractions[i]->GetSteamId64() == steamid64 && m_vecInfractions[i]->GetType() == type)
+		{
+			m_vecInfractions.Remove(i);
+			
+			return true;
+		}
+	}
+
+	return false;
 }
 
 CAdmin *CAdminSystem::FindAdmin(uint64 iSteamID)

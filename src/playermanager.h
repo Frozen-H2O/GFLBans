@@ -20,7 +20,9 @@
 #pragma once
 #include "common.h"
 #include "utlvector.h"
+#include "steam/steam_api_common.h"
 #include "steam/steamclientpublic.h"
+#include "steam/isteamuser.h"
 #include <playerslot.h>
 #include "bitvec.h"
 #include "entity/lights.h"
@@ -137,7 +139,6 @@ public:
 	bool IsAdminFlagSet(uint64 iFlag);
 	bool IsFlooding();
 	
-	void SetAuthenticated() { m_bAuthenticated = true; }
 	void SetConnected() { m_bConnected = true; }
 	void SetUnauthenticatedSteamId(const CSteamID* steamID) { m_UnauthenticatedSteamID = steamID; }
 	void SetSteamId(const CSteamID* steamID) { m_SteamID = steamID; }
@@ -272,7 +273,7 @@ public:
 	void OnBotConnected(CPlayerSlot slot);
 	void OnClientPutInServer(CPlayerSlot slot);
 	void OnLateLoad();
-	void TryAuthenticate();
+	void OnSteamAPIActivated();
 	void CheckInfractions();
 	void FlashLightThink();
 	void CheckHideDistances();
@@ -299,6 +300,8 @@ public:
 	bool IsPlayerUsingStopDecals(int slot) { return m_nUsingStopDecals & ((uint64)1 << slot); }
 
 	void UpdatePlayerStates();
+
+	STEAM_GAMESERVER_CALLBACK_MANUAL(CPlayerManager, OnValidateAuthTicket, ValidateAuthTicketResponse_t, m_CallbackValidateAuthTicketResponse);
 
 private:
 	ZEPlayer *m_vecPlayers[MAXPLAYERS];

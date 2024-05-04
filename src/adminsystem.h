@@ -155,9 +155,9 @@ public:
 	CAdminSystem();
 	bool LoadAdmins();
 	void AddInfraction(CInfractionBase*);
-	bool ApplyInfractions(ZEPlayer* player);
+	bool ApplyInfractions(ZEPlayer *player);
 	bool FindAndRemoveInfraction(ZEPlayer* player, CInfractionBase::EInfractionType type, bool bRemoveSession = true);
-	CAdmin* FindAdmin(uint64 iSteamID);
+	CAdmin *FindAdmin(uint64 iSteamID);
 	uint64 ParseFlags(const char* pszFlags);
 	void AddDisconnectedPlayer(const char* pszName, uint64 xuid, const char* pszIP);
 	void ShowDisconnectedPlayers(CCSPlayerController* const pAdmin);
