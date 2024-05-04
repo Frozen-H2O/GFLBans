@@ -1629,6 +1629,7 @@ bool CAdminSystem::FindAndRemoveInfraction(ZEPlayer *player, CInfractionBase::EI
 	return bRemovedPunishment;
 }
 
+#if 0
 bool CAdminSystem::FindAndRemoveInfractionSteamId64(uint64 steamid64, CInfractionBase::EInfractionType type)
 {
 	FOR_EACH_VEC(m_vecInfractions, i)
@@ -1643,6 +1644,7 @@ bool CAdminSystem::FindAndRemoveInfractionSteamId64(uint64 steamid64, CInfractio
 
 	return false;
 }
+#endif
 
 CAdmin *CAdminSystem::FindAdmin(uint64 iSteamID)
 {
