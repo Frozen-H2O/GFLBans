@@ -479,15 +479,6 @@ CON_COMMAND_CHAT_FLAGS(kick, "<name> - kick a player", ADMFLAG_KICK)
 	int iCommandPlayer = player ? player->GetPlayerSlot() : -1;
 	int iNumClients = 0;
 	int pSlot[MAXPLAYERS];
-	ENetworkDisconnectionReason dcReason = NETWORK_DISCONNECT_KICKED;
-	if (args.ArgC() > 2)
-	{
-		std::string strReason = args[2];
-		std::transform(strReason.begin(), strReason.end(), strReason.begin(),
-					   [](unsigned char c) { return std::tolower(c); });
-		if (strReason == "afk")
-			dcReason = NETWORK_DISCONNECT_KICKED_IDLE;
-	}
 
 	if (g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot) == ETargetType::PLAYER && iNumClients > 1)
 	{
@@ -512,11 +503,9 @@ CON_COMMAND_CHAT_FLAGS(kick, "<name> - kick a player", ADMFLAG_KICK)
 
 		ZEPlayer* pTargetPlayer = g_playerManager->GetPlayer(pSlot[i]);
 
-		g_pEngineServer2->DisconnectClient(pTargetPlayer->GetPlayerSlot(), dcReason);
-		if (dcReason == NETWORK_DISCONNECT_KICKED_IDLE)
-			ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "kicked %s (\1reason:\x09 AFK\1).", pszCommandPlayerName, pTarget->GetPlayerName());
-		else
-			PrintSingleAdminAction(pszCommandPlayerName, pTarget->GetPlayerName(), "kicked");
+		g_pEngineServer2->DisconnectClient(pTargetPlayer->GetPlayerSlot(), NETWORK_DISCONNECT_KICKED);
+
+		PrintSingleAdminAction(pszCommandPlayerName, pTarget->GetPlayerName(), "kicked");
 	}
 }
 
