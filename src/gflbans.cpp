@@ -307,7 +307,7 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 	}
 
 	int iCommandPlayerSlot = player->GetPlayerSlot();
-	CTimerBase* timer = new CTimer(30.0f, true, [reportIndex, iCommandPlayerSlot]() {
+	CTimerBase* timer = new CTimer(30.0f, true, true, [reportIndex, iCommandPlayerSlot]() {
 		auto player = CCSPlayerController::FromSlot(iCommandPlayerSlot);
 		if (g_pGFLBansSystem->mapPendingReports.find(reportIndex) != g_pGFLBansSystem->mapPendingReports.end())
 		{
@@ -384,7 +384,7 @@ CON_COMMAND_CHAT(calladmin, "<reason> - request for an admin to join the server"
 	}
 
 	int iCommandPlayerSlot = player->GetPlayerSlot();
-	CTimerBase* timer = new CTimer(30.0f, true, [reportIndex, iCommandPlayerSlot]() {
+	CTimerBase* timer = new CTimer(30.0f, true, true, [reportIndex, iCommandPlayerSlot]() {
 		auto player = CCSPlayerController::FromSlot(iCommandPlayerSlot);
 		if (g_pGFLBansSystem->mapPendingReports.find(reportIndex) != g_pGFLBansSystem->mapPendingReports.end())
 		{

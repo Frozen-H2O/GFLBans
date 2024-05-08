@@ -300,7 +300,7 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, bool
 	});
 
 	// Check for the expiration of infractions like mutes or gags
-	new CTimer(60.0f, true, []() {
+	new CTimer(60.0f, true, true, []() {
 		g_pGFLBansSystem->GFLBans_Heartbeat();
 		return 60.0f;
 	});
@@ -501,7 +501,7 @@ void CS2Fixes::Hook_StartupServer(const GameSessionConfiguration_t& config, ISou
 	});
 
 	// Run a heartbeat on map change to update web, while removing local punishments
-	new CTimer(5.0f, true, []() {
+	new CTimer(5.0f, true, true, []() {
 		if (g_pGFLBansSystem->GFLBans_Heartbeat())
 		{
 			g_pAdminSystem->RemoveSessionPunishments();

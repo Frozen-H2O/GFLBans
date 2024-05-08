@@ -1887,7 +1887,7 @@ void CAdminSystem::RemoveSessionPunishments(float fDelay)
 {
 	if (fDelay > 0)
 	{
-		new CTimer(fDelay, true, []() {
+		new CTimer(fDelay, true, true, []() {
 			g_pAdminSystem->RemoveSessionPunishments(-1);
 			return -1.0f;
 		});
