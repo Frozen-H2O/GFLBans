@@ -46,6 +46,7 @@
 #include "serversideclient.h"
 #include "networksystem/inetworkserializer.h"
 #include "map_votes.h"
+#include "tier0/vprof.h"
 
 #include "tier0/memdbgon.h"
 
@@ -130,8 +131,21 @@ FAKE_BOOL_CVAR(cs2f_use_old_push, "Whether to use the old CSGO trigger_push beha
 static bool g_bLogPushes = false;
 FAKE_BOOL_CVAR(cs2f_log_pushes, "Whether to log pushes (cs2f_use_old_push must be enabled)", g_bLogPushes, false, false)
 
+static bool g_bPreventMultiPush = false;
+FAKE_BOOL_CVAR(cs2f_prevent_multi_push, "Whether to prevent pushes from affecting the same entity multiple times in a tick", g_bPreventMultiPush, false, false)
+
+std::unordered_set<uint64> g_PushEntSet;
+
 void FASTCALL Detour_TriggerPush_Touch(CTriggerPush* pPush, Z_CBaseEntity* pOther)
 {
+	// Fitting both handles into a single uint64
+	uint64 iPushID = ((uint64)pPush->GetHandle().ToInt() << 32) + pOther->GetHandle().ToInt();
+
+	// We're inserting the push ID into a set and if that fails it means this trigger already pushed the other ent in this tick
+	// The set is cleared on the next tick
+	if (g_bPreventMultiPush && !g_PushEntSet.insert(iPushID).second)
+		return;
+
 	// This trigger pushes only once (and kills itself) or pushes only on StartTouch, both of which are fine already
 	if (!g_bUseOldPush || pPush->m_spawnflags() & SF_TRIG_PUSH_ONCE || pPush->m_bTriggerOnStartTouch())
 	{
@@ -162,15 +176,10 @@ void FASTCALL Detour_TriggerPush_Touch(CTriggerPush* pPush, Z_CBaseEntity* pOthe
 		return;
 
 	Vector vecAbsDir;
+	matrix3x4_t matTransform = pPush->m_CBodyComponent()->m_pSceneNode()->EntityToWorldTransform();
 
-	matrix3x4_t mat = pPush->m_CBodyComponent()->m_pSceneNode()->EntityToWorldTransform();
-	
-	Vector pushDir = pPush->m_vecPushDirEntitySpace();
-
-	// i had issues with vectorrotate on linux so i did it here
-	vecAbsDir.x = pushDir.x * mat[0][0] + pushDir.y * mat[0][1] + pushDir.z * mat[0][2];
-	vecAbsDir.y = pushDir.x * mat[1][0] + pushDir.y * mat[1][1] + pushDir.z * mat[1][2];
-	vecAbsDir.z = pushDir.x * mat[2][0] + pushDir.y * mat[2][1] + pushDir.z * mat[2][2];
+	Vector vecPushDir = pPush->m_vecPushDirEntitySpace();
+	VectorRotate(vecPushDir, matTransform, vecAbsDir);
 
 	Vector vecPush = vecAbsDir * pPush->m_flSpeed();
 
@@ -220,6 +229,8 @@ bool FASTCALL Detour_IsHearingClient(void* serverClient, int index)
 
 void SayChatMessageWithTimer(IRecipientFilter &filter, const char *pText, CCSPlayerController *pPlayer, uint64 eMessageType)
 {
+	VPROF("SayChatMessageWithTimer");
+
 	char buf[256];
 
 	// Filter console message - remove non-alphanumeric chars and convert to lowercase
@@ -363,6 +374,8 @@ bool FASTCALL Detour_CCSPlayer_WeaponServices_CanUse(CCSPlayer_WeaponServices *p
 
 bool FASTCALL Detour_CEntityIdentity_AcceptInput(CEntityIdentity* pThis, CUtlSymbolLarge* pInputName, CEntityInstance* pActivator, CEntityInstance* pCaller, variant_t* value, int nOutputID)
 {
+	VPROF_SCOPE_BEGIN("Detour_CEntityIdentity_AcceptInput");
+
 	if (g_bEnableZR)
 		ZR_Detour_CEntityIdentity_AcceptInput(pThis, pInputName, pActivator, pCaller, value, nOutputID);
 
@@ -398,6 +411,8 @@ bool FASTCALL Detour_CEntityIdentity_AcceptInput(CEntityIdentity* pThis, CUtlSym
 		if (!V_strcasecmp(pInputName->String(), "Deactivate"))
 			return CGameUIHandler::OnDeactivate(pGameUI, reinterpret_cast<Z_CBaseEntity*>(pActivator));
 	}
+
+	VPROF_SCOPE_END();
 
     return CEntityIdentity_AcceptInput(pThis, pInputName, pActivator, pCaller, value, nOutputID);
 }
@@ -461,6 +476,8 @@ void* FASTCALL Detour_ProcessUsercmds(CBasePlayerPawn *pPawn, CUserCmd *cmds, in
 	if (!g_bDisableSubtick)
 		return ProcessUsercmds(pPawn, cmds, numcmds, paused, margin);
 
+	VPROF_SCOPE_BEGIN("Detour_ProcessUsercmds");
+
 	static int offset = g_GameConfig->GetOffset("UsercmdOffset");
 
 	for (int i = 0; i < numcmds; i++)
@@ -470,6 +487,8 @@ void* FASTCALL Detour_ProcessUsercmds(CBasePlayerPawn *pPawn, CUserCmd *cmds, in
 		for (int j = 0; j < pUserCmd->mutable_base()->subtick_moves_size(); j++)
 			pUserCmd->mutable_base()->mutable_subtick_moves(j)->set_when(0.f);
 	}
+
+	VPROF_SCOPE_END();
 
 	return ProcessUsercmds(pPawn, cmds, numcmds, paused, margin);
 }

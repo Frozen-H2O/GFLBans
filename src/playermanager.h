@@ -203,6 +203,7 @@ public:
 	CBaseModelEntity *GetGlowModel() { return m_hGlowModel.Get(); }
 	float GetSpeedMod() { return m_flSpeedMod; }
 	
+	void OnSpawn();
 	void OnAuthenticated();
 	void CheckAdmin();
 	void CheckInfractions();

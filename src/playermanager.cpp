@@ -31,6 +31,7 @@
 #include "ctimer.h"
 #include "ctime"
 #include "leader.h"
+#include "tier0/vprof.h"
 #include "gflbans.h"
 
 #include "tier0/memdbgon.h"
@@ -88,6 +89,11 @@ ZEPlayer *ZEPlayerHandle::Get() const
 		return nullptr;
 	
 	return pZEPlayer;
+}
+
+void ZEPlayer::OnSpawn()
+{
+	SetSpeedMod(1.f);
 }
 
 void ZEPlayer::OnAuthenticated()
@@ -151,7 +157,8 @@ FAKE_BOOL_CVAR(cs2f_flashlight_transmit_others, "Whether to transmit other playe
 FAKE_FLOAT_CVAR(cs2f_flashlight_brightness, "How bright should flashlights be", g_flFlashLightBrightness, 1.0f, false)
 FAKE_FLOAT_CVAR(cs2f_flashlight_distance, "How far flashlights should be from the player's head", g_flFlashLightDistance, 54.0f, false)
 FAKE_COLOR_CVAR(cs2f_flashlight_color, "What color to use for flashlights", g_clrFlashLightColor, false)
-FAKE_STRING_CVAR(cs2f_flashlight_attachment, "Which attachment to parent a flashlight to", g_sFlashLightAttachment, false)
+FAKE_STRING_CVAR(cs2f_flashlight_attachment, "Which attachment to parent a flashlight to. "
+	"If the player model is not properly setup, you might have to use clip_limit here instead", g_sFlashLightAttachment, false)
 
 void ZEPlayer::SpawnFlashLight()
 {
@@ -289,7 +296,7 @@ void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver/* = 0*/)
 	if (pGiver && pGiver->IsLeader())
 		bLeaderBeacon = true;
 
-	new CTimer(1.0f, true, [hPlayer, hParticle, hGiver, iTeamNum, bLeaderBeacon]()
+	new CTimer(1.0f, false, false, [hPlayer, hParticle, hGiver, iTeamNum, bLeaderBeacon]()
 	{
 		CParticleSystem *pParticle = hParticle.Get();
 
@@ -415,7 +422,7 @@ void ZEPlayer::StartGlow(Color color, int duration)
 	int iTeamNum = hPawn->m_iTeamNum();
 
 	// check if player's team or model changed
-	new CTimer(0.5f, false, [hGlowModel, hPawn, iTeamNum]()
+	new CTimer(0.5f, false, false, [hGlowModel, hPawn, iTeamNum]()
 	{
 		CBaseModelEntity *pModel = hGlowModel.Get();
 		CCSPlayerPawn *pawn = hPawn.Get();
@@ -445,7 +452,7 @@ void ZEPlayer::StartGlow(Color color, int duration)
 	if (duration < 1)
 		return;
 	
-	new CTimer((float)duration, false, [hGlowModel]()
+	new CTimer((float)duration, false, false, [hGlowModel]()
 	{
 		CBaseModelEntity *pModel = hGlowModel.Get();
 
@@ -615,7 +622,7 @@ void CPlayerManager::OnValidateAuthTicket(ValidateAuthTicketResponse_t *pRespons
 				ClientPrint(pController, HUD_PRINTTALK, " \7WARNING: You will be kicked in %i seconds due to failed Steam authentication.\n", g_iDelayAuthFailKick);
 
 				ZEPlayerHandle hPlayer = pPlayer->GetHandle();
-				new CTimer(g_iDelayAuthFailKick, true, [hPlayer]()
+				new CTimer(g_iDelayAuthFailKick, true, true, [hPlayer]()
 				{
 					if (!hPlayer.IsValid())
 						return -1.f;
@@ -648,6 +655,8 @@ void CPlayerManager::FlashLightThink()
 	if (!g_bFlashLightEnable)
 		return;
 
+	VPROF("CPlayerManager::FlashLightThink");
+
 	for (int i = 0; i < gpGlobals->maxClients; i++)
 	{
 		CCSPlayerController *pPlayer = CCSPlayerController::FromSlot(i);
@@ -671,6 +680,8 @@ void CPlayerManager::CheckHideDistances()
 {
 	if (!g_pEntitySystem)
 		return;
+
+	VPROF("CPlayerManager::CheckHideDistances");
 
 	for (int i = 0; i < gpGlobals->maxClients; i++)
 	{
@@ -775,10 +786,12 @@ FAKE_BOOL_CVAR(cs2f_infinite_reserve_ammo, "Whether to enable infinite reserve a
 
 void CPlayerManager::SetupInfiniteAmmo()
 {
-	new CTimer(5.0f, false, []()
+	new CTimer(5.0f, false, true, []()
 	{
 		if (!g_bInfiniteAmmo)
 			return 5.0f;
+
+		VPROF("CPlayerManager::InfiniteAmmoTimer");
 
 		for (int i = 0; i < gpGlobals->maxClients; i++)
 		{

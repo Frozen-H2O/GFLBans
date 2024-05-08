@@ -17,11 +17,11 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "usermessages.pb.h"
 
 #include "adminsystem.h"
 #include "KeyValues.h"
 #include "interfaces/interfaces.h"
+#include "filesystem.h"
 #include "icvar.h"
 #include "playermanager.h"
 #include "commands.h"
@@ -991,7 +991,7 @@ CON_COMMAND_CHAT_FLAGS(map, "<mapname> - change map", ADMFLAG_CHANGEMAP)
 
 		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX "Changing map to %s...", args[1]);
 
-		new CTimer(5.0f, false, [sCommand]()
+		new CTimer(5.0f, false, true, [sCommand]()
 		{
 			g_pEngineServer2->ServerCommand(sCommand.c_str());
 			return -1.0f;
@@ -1006,7 +1006,7 @@ CON_COMMAND_CHAT_FLAGS(map, "<mapname> - change map", ADMFLAG_CHANGEMAP)
 
 	ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX "Changing map to %s...", szMapName);
 
-	new CTimer(5.0f, false, [szMapName]()
+	new CTimer(5.0f, false, true, [szMapName]()
 	{
 		g_pEngineServer2->ChangeLevel(szMapName, nullptr);
 		return -1.0f;
@@ -1554,6 +1554,9 @@ void CAdminSystem::SaveInfractions()
 
 	char szPath[MAX_PATH];
 	V_snprintf(szPath, sizeof(szPath), "%s%s", Plat_GetGameDirectory(), "/csgo/addons/cs2fixes/data/infractions.txt");
+
+	// Create the directory in case it doesn't exist
+	g_pFullFileSystem->CreateDirHierarchyForFile(szPath, nullptr);
 
 	if (!pKV->SaveToFile(g_pFullFileSystem, szPath))
 		Warning("Failed to save infractions to %s\n", szPath);
