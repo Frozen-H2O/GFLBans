@@ -198,12 +198,12 @@ CON_COMMAND_CHAT_FLAGS(callban, "<name> <(+)duration> [reason] - Ban a player fr
 	ParseInfraction(args, player, true, CallAdminBlock);
 }
 
-CON_COMMAND_CHAT_FLAGS(uncallban, "<name> <(+)duration> [reason] - Unban a player from using report and calladmin", ADMFLAG_CHAT)
+CON_COMMAND_CHAT_FLAGS(uncallban, "<name> [reason] - Unban a player from using report and calladmin", ADMFLAG_CHAT)
 {
 	ParseInfraction(args, player, false, CallAdminBlock);
 }
 
-CON_COMMAND_CHAT_FLAGS(callunban, "<name> <(+)duration> [reason] - Unban a player from using report and calladmin", ADMFLAG_CHAT)
+CON_COMMAND_CHAT_FLAGS(callunban, "<name> [reason] - Unban a player from using report and calladmin", ADMFLAG_CHAT)
 {
 	ParseInfraction(args, player, false, CallAdminBlock);
 }
