@@ -1016,9 +1016,11 @@ void GFLBansSystem::GFLBans_CheckPlayerInfractions(ZEPlayer* zpPlayer)
 
 		g_pGFLBansSystem->CheckJSONForBlock(zpPlayer, response, Mute, true, false);
 		g_pGFLBansSystem->CheckJSONForBlock(zpPlayer, response, Gag, true, false);
-		g_pGFLBansSystem->CheckJSONForBlock(zpPlayer, response, Ban, true, false);
 		g_pGFLBansSystem->CheckJSONForBlock(zpPlayer, response, AdminChatGag, true, false);
 		// We dont need to check to apply a Call Admin Block server side, since that is all handled by GFLBans itself
+
+		// Ban should be checked last, since it could make zpPlayer point at garbage
+		g_pGFLBansSystem->CheckJSONForBlock(zpPlayer, response, Ban, true, false);
 	}, g_rghdGFLBansAuth);
 }
 
