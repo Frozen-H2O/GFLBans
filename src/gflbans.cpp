@@ -970,16 +970,16 @@ bool GFLBansSystem::GFLBans_Heartbeat()
 			if (!g_pGFLBansSystem->CheckJSONForBlock(zpPlayer, jInfractions, Gag, true, false)
 				&& bWasPunished && !zpPlayer->IsGagged())
 			{
-				ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "You are no longer %s. You may type in chat again."),
-					        GetActionPhrase(Gag, VerbTense::Past, true);
+				ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "You are no longer %s. You may type in chat again.",
+					        GetActionPhrase(Gag, VerbTense::Past, true));
 			}
 			
 			bWasPunished = zpPlayer->IsAdminChatGagged();
 			if (!g_pGFLBansSystem->CheckJSONForBlock(zpPlayer, jInfractions, AdminChatGag, true, false)
 				&& bWasPunished && !zpPlayer->IsAdminChatGagged())
 			{
-				ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "You are no longer %s. You may type in chat again."),
-					        GetActionPhrase(AdminChatGag, VerbTense::Past, true);
+				ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "You are no longer %s. You may type in chat again.",
+					        GetActionPhrase(AdminChatGag, VerbTense::Past, true));
 			}
 			
 			g_pGFLBansSystem->CheckJSONForBlock(zpPlayer, jInfractions, Ban);
