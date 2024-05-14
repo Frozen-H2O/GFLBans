@@ -22,6 +22,7 @@
 #include "adminsystem.h"
 #include "commands.h"
 #include "ctimer.h"
+#include "discord.h"
 #include "entity/ccsplayercontroller.h"
 #include "entity/cgamerules.h"
 #include "httpmanager.h"
@@ -548,9 +549,6 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 	zpTarget = g_playerManager->GetPlayer(pSlot[0]);
 
 	if (zpTarget->IsFakeClient())
-		return;
-
-	if (zpTarget->IsFakeClient())
 	{
 		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Bots cannot have punishments.");
 		return;
@@ -632,6 +630,124 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 
 		ConsoleListPunishments(pPlayer, response);
 	}, g_rghdGFLBansAuth);
+}
+
+static std::time_t iLastAltCheck = std::time(0) - 60;
+CON_COMMAND_CHAT(altcheck, "- Check if a player is potentially an alt. If true, report if used by a non-admin and permaban if used by an admin.")
+{
+	int iCommandPlayer = player ? player->GetPlayerSlot() : -1;
+	bool bIsAdmin = player ? g_playerManager->GetPlayer(iCommandPlayer)->IsAdminFlagSet(ADMFLAG_BAN) : true;
+
+	// This is to block any rate limiting. Site allows 15 batch requests per minute, but to be safe
+	// and not have people altcheck whenever they simply dislike someone, non-admins only get access
+	// to it once per minute
+	if (std::time(0) - iLastAltCheck <= 60 && !bIsAdmin)
+	{
+		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "This command was used by someone recently, please try again later.");
+		return;
+	}
+	iLastAltCheck = std::time(0);
+
+	if (!bIsAdmin)
+		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Checking for alts. If any obvious alts are found, a report will be sent...");
+	else
+		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Checking for alts. If any obvious alts are found, they will be permabanned...");
+
+	std::regex regBannedIP("maroc.*telecom", std::regex_constants::ECMAScript | std::regex_constants::icase);
+	std::regex regBannedName("3gMwIZlD6PA", std::regex_constants::ECMAScript | std::regex_constants::icase);
+	std::string strURL = "http://ip-api.com/batch?fields=8704";
+	json jPlayerIPs = json::array();
+	std::map<std::string, CHandle<CCSPlayerController>> mPlayers;
+
+	for (int i = 0; i < gpGlobals->maxClients; i++)
+	{
+		CCSPlayerController* pTarget = CCSPlayerController::FromSlot(i);
+		if (!pTarget)
+			continue;
+
+		ZEPlayer* zpTarget = pTarget->GetZEPlayer();
+		if (!zpTarget || zpTarget->IsFakeClient())
+			continue;
+
+		bool bIsAlt = std::regex_search(pTarget->GetPlayerName(), regBannedName);
+		if (bIsAlt && bIsAdmin)
+		{
+			CreateInfraction(Ban, EchoType::All, player, pTarget, "Ban Evading", 0, false);
+			continue;
+		}
+		else if (bIsAlt)
+		{
+			std::string strID = zpTarget->IsAuthenticated() ? std::to_string(zpTarget->GetSteamId64()) : std::to_string(zpTarget->GetUnauthenticatedSteamId64());
+			std::string strReportMessage = "@here **__AltCheck output:__**\n\t**[" + std::string(pTarget->GetPlayerName()) + "](https://steamcommunity.com/profiles/" + strID + "/)**";
+			if (!zpTarget->IsAuthenticated())
+				strReportMessage.append(" (Unauthenticated)");
+			strReportMessage.append(" is likely a banned player's alt (IP: " + std::string(zpTarget->GetIpAddress()) + ").");
+
+			g_pDiscordBotManager->PostDiscordMessage("AltCheckBot", strReportMessage.c_str());
+			
+			continue;
+		}
+
+		std::string strIP = zpTarget->GetIpAddress();
+		if (strIP.length() == 0 || strIP == "127.0.0.1")
+			continue;
+
+		jPlayerIPs.push_back(strIP);
+		mPlayers[strIP] = pTarget->GetHandle();
+	}
+
+	if (jPlayerIPs.size() == 0)
+		return;
+
+	CHandle<CCSPlayerController> hPlayer = player ? player->GetHandle() : nullptr;
+
+
+#if 1
+	Message(("Alt Check Query:\n" + strURL + "\n").c_str());
+	Message((jPlayerIPs.dump(1) + "\n").c_str());
+#endif
+
+	g_HTTPManager.POST(strURL.c_str(), jPlayerIPs.dump().c_str(), [hPlayer, mPlayers, bIsAdmin, regBannedIP]
+			(HTTPRequestHandle request, json response) {
+#if 1
+		Message(("Alt Check Response:\n" + response.dump(1) + "\n").c_str());
+#endif
+
+		CCSPlayerController* pPlayer = hPlayer ? hPlayer.Get() : nullptr;
+		if (response.empty())
+			return;
+
+		for (int i = 0; i < response.size(); i++)
+		{
+			std::string strIP = response[i].value("query", "");
+			CCSPlayerController* pTarget = mPlayers.at(strIP).Get();
+			if (!pTarget || !std::regex_search(response[i].value("isp", ""), regBannedIP))
+				continue;
+			
+			if (bIsAdmin)
+				CreateInfraction(Ban, EchoType::All, pPlayer, pTarget, "Ban Evading", 0, false);
+			else
+			{
+
+				ZEPlayer* zpTarget = pTarget->GetZEPlayer();
+				std::string strReportMessage = "";
+				if (!zpTarget)
+				{
+					strReportMessage = "@here \n**c_altcheck output:** Player " + std::string(pTarget->GetPlayerName()) + " is a likely alt on IP " + response[i].value("query", "") + ".";
+				}
+				else
+				{
+					std::string strID = zpTarget->IsAuthenticated() ? std::to_string(zpTarget->GetSteamId64()) : std::to_string(zpTarget->GetUnauthenticatedSteamId64());
+					strReportMessage = "@here **__AltCheck output:__**\n\t**[" + std::string(pTarget->GetPlayerName()) + "](https://steamcommunity.com/profiles/" + strID + "/)**";
+					if (!zpTarget->IsAuthenticated())
+						strReportMessage.append(" (Unauthenticated)");
+					strReportMessage.append(" is likely a banned player's alt (IP: " + strIP + ").");
+				}
+				
+				g_pDiscordBotManager->PostDiscordMessage("AltCheckBot", strReportMessage.c_str());
+			}
+		}
+	});
 }
 
 // --- GFLBans Spaghetti ---
@@ -978,12 +1094,14 @@ bool GFLBansSystem::GFLBans_Heartbeat()
 			if (!g_pGFLBansSystem->CheckJSONForBlock(zpPlayer, jInfractions, AdminChatGag, true, false)
 				&& bWasPunished && !zpPlayer->IsAdminChatGagged())
 			{
-				ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "You are no longer %s. You may type in chat again.",
+				ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "You are no longer %s. You may type in admin chat again.",
 					        GetActionPhrase(AdminChatGag, VerbTense::Past, true));
 			}
-			
-			g_pGFLBansSystem->CheckJSONForBlock(zpPlayer, jInfractions, Ban);
 			// We dont need to check to check for or apply a Call Admin Block, since that is all handled by GFLBans itself
+			
+
+			// Ban should be checked last, since it could make zpPlayer point at garbage
+			g_pGFLBansSystem->CheckJSONForBlock(zpPlayer, jInfractions, Ban);
 		}
 	}, g_rghdGFLBansAuth);
 	return true;
