@@ -42,7 +42,8 @@ enum InfType
 	Gag,
 	Silence,
 	AdminChatGag,
-	CallAdminBlock
+	CallAdminBlock,
+	Warn
 };
 
 enum EchoType
@@ -53,6 +54,28 @@ enum EchoType
 	Target,
 	Console
 };
+
+enum InfractionFlags
+{
+	SYSTEM = 1 << 0,
+	GLOBAL = 1 << 1,
+	COMMUNITY = 1 << 2,
+	PERMANENT = 1 << 3,
+	VPN = 1 << 4,
+	WEB = 1 << 5,
+	REMOVED = 1 << 6,
+	VOICE_BLOCK = 1 << 7,
+	CHAT_BLOCK = 1 << 8,
+	BAN = 1 << 9,
+	ADMIN_CHAT_BLOCK = 1 << 10,
+	CALL_ADMIN_BAN = 1 << 11,
+	SESSION = 1 << 12,
+	DEC_ONLINE_ONLY = 1 << 13,
+	AUTO_TIER = 1 << 16,
+	NOT_WARNING = (VOICE_BLOCK | CHAT_BLOCK | BAN | ADMIN_CHAT_BLOCK | CALL_ADMIN_BAN)
+};
+
+void EchoMessage(CCSPlayerController* pAdmin, CCSPlayerController* pTarget, const char* pszPunishment, EchoType echo);
 
 // Creates a new infraction of type infType on the server and adds it to GFLBans. pBadPerson must be a valid client
 void CreateInfraction(InfType infType, EchoType echo, CCSPlayerController* pAdmin,
@@ -177,6 +200,32 @@ public:
 	// Returns true if a chat message should be filtered and false if not
 	// If gflbans_filtered_gag_duration is non-negative, pChatter will be gagged for that duration if true return value
 	bool FilterMessage(CCSPlayerController* pChatter, const CCommand& args);
+
+	// Prints pBadPerson's longest punishments of each type to pAdmin.
+	void CheckPunishmentHistory(CCSPlayerController* pAdmin, CCSPlayerController* pBadPerson,
+								std::string strReason);
+
+	// Gets pBadPerson's longest punishment duration of iType and then issues a new punishment with double the duration
+	// returns false if it does not send a web request, true if a web request is sent (regardless of whether it returns an error or not)
+	bool StackPunishment(CCSPlayerController* pAdmin, CCSPlayerController* pBadPerson,
+						 std::string strReason, InfType iType, EchoType echo, bool bWarnFirst);
+
+private:
+	void GetPunishmentHistory(std::shared_ptr<std::vector<int>> vecInfractions, int iCounted,
+							  CHandle<CCSPlayerController> hAdmin, CHandle<CCSPlayerController> hBadPerson,
+							  std::string strReason);
+
+	void DisplayPunishmentHistory(std::shared_ptr<std::vector<int>> vecInfractions,
+								  CHandle<CCSPlayerController> hAdmin, CHandle<CCSPlayerController> hBadPerson,
+								  std::string strReason);
+
+	bool GetPunishmentStacks(std::shared_ptr<std::vector<int>> vecInfractions, int iCounted,
+							 CHandle<CCSPlayerController> hAdmin, CHandle<CCSPlayerController> hBadPerson,
+							 std::string strReason, InfType iType, EchoType echo, bool bWarnFirst);
+
+	void ApplyStackedPunishment(std::shared_ptr<std::vector<int>> vecInfractions,
+								CHandle<CCSPlayerController> hAdmin, CHandle<CCSPlayerController> hBadPerson,
+								std::string strReason, InfType iType, EchoType echo, bool bWarnFirst);
 };
 
 extern GFLBansSystem *g_pGFLBansSystem;
