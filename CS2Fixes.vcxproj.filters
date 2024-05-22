@@ -89,6 +89,9 @@
     <ClCompile Include="src\httpmanager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\idlemanager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\votemanager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -224,6 +227,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\httpmanager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\idlemanager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\votemanager.h">
