@@ -1641,7 +1641,7 @@ void GFLBansSystem::DisplayPunishmentHistory(std::shared_ptr<std::vector<int>> v
 		return;
 	}
 
-	ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "Check console for each %s's punishment history.", pBadPerson->GetPlayerName());
+	ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "Check console for %s's punishment history.", pBadPerson->GetPlayerName());
 	ClientPrint(pAdmin, HUD_PRINTCONSOLE, "%s's longest infractions:", pBadPerson->GetPlayerName());
 	if (vecInfractions->at(Ban) == 0)
 		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tBan: Permanent");
