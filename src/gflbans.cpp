@@ -1646,27 +1646,27 @@ void GFLBansSystem::DisplayPunishmentHistory(std::shared_ptr<std::vector<int>> v
 	if (vecInfractions->at(Ban) == 0)
 		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tBan: Permanent");
 	else if (vecInfractions->at(Ban) > 0)
-		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tBan: %s", FormatTime(vecInfractions->at(Ban), true));
+		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tBan: %s", FormatTime(vecInfractions->at(Ban), true).c_str());
 
 	if (vecInfractions->at(Mute) == 0)
 		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tMute: Permanent");
 	else if (vecInfractions->at(Mute) > 0)
-		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tMute: %s", FormatTime(vecInfractions->at(Mute), true));
+		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tMute: %s", FormatTime(vecInfractions->at(Mute), true).c_str());
 
 	if (vecInfractions->at(Gag) == 0)
 		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tGag: Permanent");
 	else if (vecInfractions->at(Gag) > 0)
-		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tGag: %s", FormatTime(vecInfractions->at(Gag), true));
+		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tGag: %s", FormatTime(vecInfractions->at(Gag), true).c_str());
 
 	if (vecInfractions->at(AdminChatGag) == 0)
 		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tAdmin Chat Gag: Permanent");
 	else if (vecInfractions->at(AdminChatGag) > 0)
-		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tAdmin Chat Gag: %s", FormatTime(vecInfractions->at(AdminChatGag), true));
+		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tAdmin Chat Gag: %s", FormatTime(vecInfractions->at(AdminChatGag), true).c_str());
 
 	if (vecInfractions->at(CallAdminBlock) == 0)
 		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tCall Admin Block: Permanent");
 	else if (vecInfractions->at(CallAdminBlock) > 0)
-		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tCall Admin Block: %s", FormatTime(vecInfractions->at(CallAdminBlock), true));
+		ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tCall Admin Block: %s", FormatTime(vecInfractions->at(CallAdminBlock), true).c_str());
 }
 
 
