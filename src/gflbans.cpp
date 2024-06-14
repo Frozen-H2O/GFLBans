@@ -40,7 +40,7 @@ GFLBansSystem* g_pGFLBansSystem = nullptr;
 
 void ParseInfraction(const CCommand &args, CCSPlayerController* pAdmin, bool bAdding, InfType infType);
 void ConsoleListPunishments(CCSPlayerController* const player, json punishments);
-const char* GetActionPhrase(InfType typeInfraction, VerbTense vTense, bool bAdding = true);
+const char* GetActionPhrase(InfType typeInfraction, GrammarTense iTense, bool bAdding = true);
 const char* LocalToWebInfraction(InfType typeInfraction);
 json PlayerObj(CHandle<CCSPlayerController> hPlayer, bool bUseIP);
 json PlayerObj(CCSPlayerController* pPlayer, bool bUseIP);
@@ -216,40 +216,13 @@ CON_COMMAND_CHAT_FLAGS(history, "<name> - Checks a player's infraction history",
 		return;
 	}
 
-	int iCommandPlayer = player->GetPlayerSlot();
 	int iNumClients = 0;
-	int pSlot[MAXPLAYERS];
-	ETargetType nType = g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot);
-	if (iNumClients > 1)
-	{
-		if (nType == ETargetType::PLAYER)
-			ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "More than one client matched.");
-		else
-			ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "You may only check individual players.");
+	int pSlots[MAXPLAYERS];
+
+	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_RANDOM | NO_MULTIPLE | NO_BOT | NO_UNAUTHENTICATED))
 		return;
-	}
 
-	if (!iNumClients)
-	{
-		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Player not found.");
-		return;
-	}
-
-	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[0]);
-
-	if (!pTarget)
-	{
-		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Target not found.");
-		return;
-	}
-
-	ZEPlayer* zpTarget = pTarget->GetZEPlayer();
-	if (!zpTarget->IsAuthenticated())
-	{
-		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "%s is not authenticated yet, please wait a bit and then try again.", pTarget->GetPlayerName());
-		return;
-	}
-
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlots[0]);
 	g_pGFLBansSystem->CheckPunishmentHistory(player, pTarget, GetReason(args, 1, true));
 }
 
@@ -274,52 +247,14 @@ CON_COMMAND_CHAT(report, "<name> <reason> - report a player")
 		return;
 	}
 
-	int iCommandPlayer = player->GetPlayerSlot();
 	int iNumClients = 0;
-	int pSlot[MAXPLAYERS];
-	ETargetType nType = g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot);
-	if (iNumClients > 1)
-	{
-		if (nType == ETargetType::PLAYER)
-			ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "More than one client matched.");
-		else
-			ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "You may only report individual players.");
+	int pSlots[MAXPLAYERS];
+
+	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_RANDOM | NO_MULTIPLE | NO_SELF | NO_BOT | NO_UNAUTHENTICATED | NO_IMMUNITY))
 		return;
-	}
 
-	if (!iNumClients)
-	{
-		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Player not found.");
-		return;
-	}
-
-	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[0]);
-
-	if (!pTarget)
-	{
-		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Target not found.");
-		return;
-	}
-
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlots[0]);
 	ZEPlayer* zpTarget = pTarget->GetZEPlayer();
-
-	if (zpTarget->IsFakeClient())
-	{
-		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "You may not report bots. Consider using /calladmin instead.");
-		return;
-	}
-
-	if (zpPlayer == zpTarget)
-	{
-		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "You may not report yourself. Consider using /calladmin instead.");
-		return;
-	}
-
-	if (!zpTarget->IsAuthenticated())
-	{
-		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "%s is not authenticated yet, please wait a bit and then try again or use /calladmin instead.", pTarget->GetPlayerName());
-		return;
-	}
 
 	std::string strMessage = GetReason(args, 1, true);
 
@@ -501,7 +436,7 @@ CON_COMMAND_CHAT(confirm, "- send a report or admin call that you attempted to s
 CON_COMMAND_CHAT_FLAGS(claim, "- claims the most recent GFLBans report/calladmin query", ADMFLAG_KICK)
 {
 	json jClaim;
-	jClaim["admin_name"] = player ? player->GetPlayerName() : "CONSOLE";
+	jClaim["admin_name"] = player ? player->GetPlayerName() : CONSOLE_NAME;
 
 	if (std::time(nullptr) - g_pGFLBansSystem->m_wLastHeartbeat > 120)
 		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "GFLBans is currently not responding. Your claim may fail.");
@@ -552,54 +487,21 @@ CON_COMMAND_CHAT_FLAGS(claim, "- claims the most recent GFLBans report/calladmin
 
 CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admins may only check their own punishments")
 {
-	int iCommandPlayer = player ? player->GetPlayerSlot() : -1;
-	int iNumClients;
-	int pSlot[MAXPLAYERS];
-	ETargetType nType = ETargetType::PLAYER;
-	ZEPlayer* zpTarget = nullptr;
-	bool bIsAdmin = player ? g_playerManager->GetPlayer(iCommandPlayer)->IsAdminFlagSet(ADMFLAG_CHAT | ADMFLAG_BAN) : true;
-	std::string strTarget = !bIsAdmin || args.ArgC() == 1 ? "" : args[1];
+	int iNumClients = 0;
+	int pSlots[MAXPLAYERS];
+	ETargetType nType;
+	ZEPlayer* pTargetPlayer = nullptr;
+	bool bIsAdmin = !player || player->GetZEPlayer()->IsAdminFlagSet(ADMFLAG_GENERIC);
+	std::string strTarget = (!bIsAdmin || args.ArgC() < 2) ? "@me" : args[1];
 
-	if (bIsAdmin && strTarget.length() > 0)
-	{
-		iNumClients = 0;
-		strTarget = args[1];
-		nType = g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlot);
-	}
-	else
-	{
-		iNumClients = 1;
-		pSlot[0] = iCommandPlayer;
-	}
-
-	if (iNumClients > 1)
-	{
-		if (nType == ETargetType::PLAYER)
-			ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "More than one client matched.");
-		else
-			ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "You can only target individual players for listing punishments.");
-		return;
-	}
-	if (iNumClients <= 0)
-	{
-		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Target not found.");
-		return;
-	}
-
-	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[0]);
-	if (!pTarget)
+	if (!g_playerManager->CanTargetPlayers(player, strTarget.c_str(), iNumClients, pSlots, NO_UNAUTHENTICATED | NO_MULTIPLE | NO_BOT, nType))
 		return;
 
-	zpTarget = g_playerManager->GetPlayer(pSlot[0]);
-
-	if (zpTarget->IsFakeClient())
-	{
-		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "Bots cannot have punishments.");
-		return;
-	}
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlots[0]);
+	bool bSelfTarget = pTarget == player;
 
 	// Send the requests
-	std::string strURL = PlayerQuery(zpTarget, false);
+	std::string strURL = PlayerQuery(pTarget->GetZEPlayer(), false);
 
 	if (strURL.length() == 0)
 		return;
@@ -607,7 +509,7 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 	CHandle<CCSPlayerController> hPlayer = player ? player->GetHandle() : nullptr;
 	CHandle<CCSPlayerController> hTarget = pTarget->GetHandle();
 
-	g_HTTPManager.GET(strURL.c_str(), [hPlayer, hTarget, strTarget](HTTPRequestHandle request, json response) {
+	g_HTTPManager.GET(strURL.c_str(), [hPlayer, hTarget, strTarget, bSelfTarget](HTTPRequestHandle request, json response) {
 #ifdef _DEBUG
 		Message("status response: %s\n", response.dump().c_str());
 #endif
@@ -628,13 +530,13 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 
 		std::vector<std::string> rgstrPunishments;
 		if (zpTarget->IsGagged())
-			rgstrPunishments.push_back(GetActionPhrase(Gag, VerbTense::Past, true));
+			rgstrPunishments.push_back(GetActionPhrase(Gag, GrammarTense::Past, true));
 		if (zpTarget->IsMuted())
-			rgstrPunishments.push_back(GetActionPhrase(Mute, VerbTense::Past, true));
+			rgstrPunishments.push_back(GetActionPhrase(Mute, GrammarTense::Past, true));
 		if (zpTarget->IsAdminChatGagged())
-			rgstrPunishments.push_back(GetActionPhrase(AdminChatGag, VerbTense::Past, true));
+			rgstrPunishments.push_back(GetActionPhrase(AdminChatGag, GrammarTense::Past, true));
 		if (response.contains("call_admin_block"))
-			rgstrPunishments.push_back(GetActionPhrase(CallAdminBlock, VerbTense::Past, true));
+			rgstrPunishments.push_back(GetActionPhrase(CallAdminBlock, GrammarTense::Past, true));
 			
 		std::string strPunishment = "";
 		if (rgstrPunishments.size() == 1)
@@ -653,21 +555,21 @@ CON_COMMAND_CHAT(status, "<name> - List a player's active punishments. Non-admin
 			if (strPunishment.length() > 0)
 			{
 				ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "%s %s.",
-							strTarget.length() == 0 ? "You are" : (strTarget + " is").c_str(),
+							bSelfTarget ? "You are" : (strTarget + " is").c_str(),
 							strPunishment.c_str());
 			}
 			else
 			{
 				ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "%s no active punishments.",
-							strTarget.length() == 0 ? "You have" : (strTarget + " has").c_str());
+							bSelfTarget ? "You have" : (strTarget + " has").c_str());
 			}
 			return;
 		}
 
 		ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "%s currently %s. Check console for more information.",
-					strTarget.length() == 0 ? "You are" : (strTarget + " is").c_str(), strPunishment.c_str());
+					bSelfTarget ? "You are" : (strTarget + " is").c_str(), strPunishment.c_str());
 
-		if (strTarget.length() == 0)
+		if (bSelfTarget)
 			ClientPrint(pPlayer, HUD_PRINTCONSOLE, "[GFLBans] Your active punishments:");
 		else
 			ClientPrint(pPlayer, HUD_PRINTCONSOLE, "[GFLBans] Active punishments for %s:", (strTarget).c_str());
@@ -786,7 +688,7 @@ GFLBans_Report::GFLBans_Report(CCSPlayerController* pCaller, std::string strMess
 							   CCSPlayerController* pBadPerson)
 {
 	m_jCaller = PlayerObj(pCaller, false);
-	m_strCallerName = pCaller ? pCaller->GetPlayerName() : "CONSOLE";
+	m_strCallerName = pCaller ? pCaller->GetPlayerName() : CONSOLE_NAME;
 	m_strMessage = strMessage.length() == 0 ? "No reason provided" :
 		strMessage.length() <= 120 ? strMessage : strMessage.substr(0, 120);
 	m_jBadPerson = pBadPerson ? PlayerObj(pBadPerson, false) : json();
@@ -1023,7 +925,7 @@ bool GFLBansSystem::GFLBans_Heartbeat()
 				&& bWasPunished && !zpPlayer->IsMuted())
 			{
 				ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "You are no longer %s. You may talk again.",
-							GetActionPhrase(Mute, VerbTense::Past, true));
+							GetActionPhrase(Mute, GrammarTense::Past, true));
 			}
 				
 			bWasPunished = zpPlayer->IsGagged();
@@ -1031,7 +933,7 @@ bool GFLBansSystem::GFLBans_Heartbeat()
 				&& bWasPunished && !zpPlayer->IsGagged())
 			{
 				ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "You are no longer %s. You may type in chat again.",
-					        GetActionPhrase(Gag, VerbTense::Past, true));
+					        GetActionPhrase(Gag, GrammarTense::Past, true));
 			}
 			
 			bWasPunished = zpPlayer->IsAdminChatGagged();
@@ -1039,7 +941,7 @@ bool GFLBansSystem::GFLBans_Heartbeat()
 				&& bWasPunished && !zpPlayer->IsAdminChatGagged())
 			{
 				ClientPrint(pPlayer, HUD_PRINTTALK, GFLBANS_PREFIX "You are no longer %s. You may type in admin chat again.",
-					        GetActionPhrase(AdminChatGag, VerbTense::Past, true));
+					        GetActionPhrase(AdminChatGag, GrammarTense::Past, true));
 			}
 			// We dont need to check to check for or apply a Call Admin Block, since that is all handled by GFLBans itself
 			
@@ -1145,7 +1047,7 @@ void GFLBansSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction>
 		}
 
 		std::string strBadPlyName = pBadPerson->GetPlayerName();
-		std::string strPunishment = std::string(GetActionPhrase(infPunishment->GetInfractionType(), VerbTense::Past, true)) +
+		std::string strPunishment = std::string(GetActionPhrase(infPunishment->GetInfractionType(), GrammarTense::Past, true)) +
 			" " + strBadPlyName + " until the map changes";
 
 		if (infPunishment->GetReason() != "No reason provided")
@@ -1245,7 +1147,7 @@ void GFLBansSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction>
 				ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "Improper block type... Send to a dev with the command used.");
 				return;
 		}
-		std::string strPunishment = GetActionPhrase(infPunishment->GetInfractionType(), VerbTense::Past, true);
+		std::string strPunishment = GetActionPhrase(infPunishment->GetInfractionType(), GrammarTense::Past, true);
 		std::string strBadPlyName = pBadPerson->GetPlayerName();
 
 		if (iDuration == 0)
@@ -1395,11 +1297,11 @@ void GFLBansSystem::GFLBans_RemoveInfraction(std::shared_ptr<GFLBans_InfractionR
 		if (!bIsPunished)
 		{
 			ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "%s is not %s.", pGoodPerson->GetPlayerName(),
-						GetActionPhrase(infPunishment->GetInfractionType(), VerbTense::Past, true));
+						GetActionPhrase(infPunishment->GetInfractionType(), GrammarTense::Past, true));
 			return;
 		}
 
-		std::string strAction = GetActionPhrase(infPunishment->GetInfractionType(), VerbTense::Past, false);
+		std::string strAction = GetActionPhrase(infPunishment->GetInfractionType(), GrammarTense::Past, false);
 		strAction.append(" ");
 		strAction.append(pGoodPerson->GetPlayerName());
 		if (infPunishment->GetReason() != "No reason provided")
@@ -1864,49 +1766,38 @@ void ParseInfraction(const CCommand &args, CCSPlayerController* pAdmin, bool bAd
 		return;
 	}
 
-	int iNumClients = 0;
-	int pSlot[MAXPLAYERS];
-
-	ETargetType nType = g_playerManager->TargetPlayerString(pAdmin ? pAdmin->GetPlayerSlot() : -1,
-															args[1], iNumClients, pSlot);
-
-	if (!iNumClients)
-	{
-		ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "Target not found.");
-		return;
-	}
-
-	if (nType == ETargetType::PLAYER && iNumClients > 1)
-	{
-		ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "More than one client matched.");
-		return;
-	}
-
-	if (nType == ETargetType::RANDOM || nType == ETargetType::RANDOM_T || nType == ETargetType::RANDOM_CT)
-	{
-		ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "You may not %s random players.",
-					GetActionPhrase(infType, PresentOrNoun, bAdding));
-		return;
-	}
-
 	int iDuration = bAdding ? ParseTimeInput(args[2]) : 0;
-	if (bAdding && iDuration == 0 && nType >= ETargetType::ALL)
+	int iNumClients = 0;
+	int pSlots[MAXPLAYERS];
+	ETargetType nType;
+
+	uint64 iBlockedFlags = NO_RANDOM | NO_SELF | NO_BOT | NO_UNAUTHENTICATED;
+
+	// Only allow multiple targetting for mutes that aren't perma (ie. !mute @all 1) for stopping mass mic spam
+	if (infType != Mute || (bAdding && iDuration == 0))
+		iBlockedFlags |= NO_MULTIPLE;
+
+	ETargetError eType = g_playerManager->GetPlayersFromString(pAdmin, args[1], iNumClients, pSlots, iBlockedFlags, nType);
+
+	if (bAdding && iDuration == 0 && (eType == ETargetError::MULTIPLE || eType == ETargetError::RANDOM))
 	{
-		ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "You may only permanently %s individuals.",
-					GetActionPhrase(infType, PresentOrNoun, bAdding));
+		ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "You may only permanently %s individuals.",
+					GetActionPhrase(infType, GrammarTense::PresentOrNoun, bAdding));
+		return;
+	}
+	else if (eType != ETargetError::NO_ERRORS)
+	{
+		ClientPrint(pAdmin, HUD_PRINTTALK, CHAT_PREFIX "%s", g_playerManager->GetErrorString(eType, (iNumClients == 0) ? 0 : pSlots[0]));
 		return;
 	}
 
+	const char *pszCommandPlayerName = pAdmin ? pAdmin->GetPlayerName() : CONSOLE_NAME;
+
+	// Dont allow session punishments for bans (since we don't want to allow admins map-banning players)
+	// or for CallAdminBlocks (since these are handled by GFLBans, not the game server)
 	if (bAdding && iDuration < 0 && (infType == Ban || infType == CallAdminBlock))
 	{
 		ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "Invalid duration.");
-		return;
-	}
-
-	if (iNumClients > 1 && (infType != Mute))
-	{
-		ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "You may only %s individuals.",
-					GetActionPhrase(infType, PresentOrNoun, bAdding));
 		return;
 	}
 
@@ -1917,12 +1808,12 @@ void ParseInfraction(const CCommand &args, CCSPlayerController* pAdmin, bool bAd
 		// Targetting a group of people. Do not log these on GFLBans.
 		for (int i = 0; i < iNumClients; i++)
 		{
-			CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[i]);
+			CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlots[i]);
 
 			if (!pTarget)
 				continue;
 
-			ZEPlayer* zpTarget = g_playerManager->GetPlayer(pSlot[i]);
+			ZEPlayer* zpTarget = g_playerManager->GetPlayer(pSlots[i]);
 
 			if (zpTarget->IsFakeClient())
 				continue;
@@ -1950,7 +1841,7 @@ void ParseInfraction(const CCommand &args, CCSPlayerController* pAdmin, bool bAd
 			}
 		}
 
-		const char* pszCommandPlayerName = pAdmin ? pAdmin->GetPlayerName() : "CONSOLE";
+		const char* pszCommandPlayerName = pAdmin ? pAdmin->GetPlayerName() : CONSOLE_NAME;
 		if (bAdding)
 		{
 			char szAction[64];
@@ -1964,28 +1855,8 @@ void ParseInfraction(const CCommand &args, CCSPlayerController* pAdmin, bool bAd
 	}
 
 	// We should be targetting only a single player from this point on
-	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlot[0]);
-
-	if (!pTarget)
-	{
-		ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "Target not found.");
-		return;
-	}
-
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlots[0]);
 	ZEPlayer* zpTarget = pTarget->GetZEPlayer();
-
-	if (zpTarget->IsFakeClient())
-	{
-		ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "You may not %s bots.",
-					GetActionPhrase(infType, PresentOrNoun, bAdding));
-		return;
-	}
-
-	if (!zpTarget->IsAuthenticated())
-	{
-		ClientPrint(pAdmin, HUD_PRINTTALK, GFLBANS_PREFIX "%s is not authenticated, please wait a moment and try again.", pTarget->GetPlayerName());
-		return;
-	}
 
 	if (bAdding)
 	{
@@ -2006,15 +1877,15 @@ void ConsoleListPunishments(CCSPlayerController* const player, json punishments)
 		std::string strPunishmentType;
 
 		if (punishment.key() == "voice_block")
-			strPunishmentType = GetActionPhrase(Mute, VerbTense::Past, true);
+			strPunishmentType = GetActionPhrase(Mute, GrammarTense::Past, true);
 		else if (punishment.key() == "chat_block")
-			strPunishmentType = GetActionPhrase(Gag, VerbTense::Past, true);
+			strPunishmentType = GetActionPhrase(Gag, GrammarTense::Past, true);
 		else if (punishment.key() == "ban")
-			strPunishmentType = GetActionPhrase(Ban, VerbTense::Past, true);
+			strPunishmentType = GetActionPhrase(Ban, GrammarTense::Past, true);
 		else if (punishment.key() == "admin_chat_block")
-			strPunishmentType = GetActionPhrase(AdminChatGag, VerbTense::Past, true);
+			strPunishmentType = GetActionPhrase(AdminChatGag, GrammarTense::Past, true);
 		else if (punishment.key() == "call_admin_block")
-			strPunishmentType = GetActionPhrase(CallAdminBlock, VerbTense::Past, true);
+			strPunishmentType = GetActionPhrase(CallAdminBlock, GrammarTense::Past, true);
 		else
 			strPunishmentType = punishment.key();
 
@@ -2051,9 +1922,9 @@ void ConsoleListPunishments(CCSPlayerController* const player, json punishments)
 }
 
 // Returns a string matching the type of punishment and grammar tense specified
-const char* GetActionPhrase(InfType typeInfraction, VerbTense vTense, bool bAdding)
+const char* GetActionPhrase(InfType typeInfraction, GrammarTense iTense, bool bAdding)
 {
-	if (vTense == VerbTense::PresentOrNoun)
+	if (iTense == GrammarTense::PresentOrNoun)
 	{
 		switch (typeInfraction)
 		{
@@ -2073,7 +1944,7 @@ const char* GetActionPhrase(InfType typeInfraction, VerbTense vTense, bool bAddi
 				return bAdding ? "warn" : "un-warn";
 		}
 	}
-	else if (vTense == VerbTense::Past)
+	else if (iTense == GrammarTense::Past)
 	{
 		switch (typeInfraction)
 		{
@@ -2093,7 +1964,7 @@ const char* GetActionPhrase(InfType typeInfraction, VerbTense vTense, bool bAddi
 				return bAdding ? "warned" : "un-warned";
 		}
 	}
-	else if (vTense == VerbTense::Continuous)
+	else if (iTense == GrammarTense::Continuous)
 	{
 		switch (typeInfraction)
 		{
@@ -2211,7 +2082,7 @@ bool IsValidIP(std::string strIP)
 
 void EchoMessage(CCSPlayerController* pAdmin, CCSPlayerController* pTarget, const char* pszPunishment, EchoType echo)
 {
-	const char* pszAdminName = pAdmin ? pAdmin->GetPlayerName() : "CONSOLE";
+	const char* pszAdminName = pAdmin ? pAdmin->GetPlayerName() : CONSOLE_NAME;
 
 	switch (echo)
 	{

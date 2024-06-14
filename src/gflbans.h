@@ -28,13 +28,6 @@ using json = nlohmann::json;
 
 #define GFLBANS_PREFIX " \x02[GFLBans]\1 "
 
-enum VerbTense
-{
-	PresentOrNoun,
-	Past,
-	Continuous
-};
-
 enum InfType
 {
 	Ban,

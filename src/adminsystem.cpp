@@ -199,6 +199,7 @@ CON_COMMAND_CHAT_FLAGS(ungag, "<name> - Ungag a player", ADMFLAG_CHAT)
 {
 	ParseInfraction(args, player, false, CInfractionBase::EInfractionType::Gag);
 }
+#endif
 
 CON_COMMAND_CHAT_FLAGS(kick, "<name> - Kick a player", ADMFLAG_KICK)
 {
@@ -1446,6 +1447,7 @@ std::string GetReason(const CCommand& args, int iArgsBefore, bool bStripUnicode)
 	return strOutput;
 }
 
+#if 0
 void ParseInfraction(const CCommand &args, CCSPlayerController* pAdmin, bool bAdding, CInfractionBase::EInfractionType infType)
 {
 	if (args.ArgC() < 2 || (bAdding && args.ArgC() < 3))
@@ -1585,8 +1587,7 @@ const char* GetActionPhrase(CInfractionBase::EInfractionType infType, GrammarTen
 	}
 	return "";
 }
-}
-
+#endif
 
 // GFLBans integration + debug stuff
 void CAdminChatGagInfraction::ApplyInfraction(ZEPlayer* player)
