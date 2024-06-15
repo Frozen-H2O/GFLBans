@@ -436,7 +436,7 @@ CON_COMMAND_CHAT(confirm, "- send a report or admin call that you attempted to s
 CON_COMMAND_CHAT_FLAGS(claim, "- claims the most recent GFLBans report/calladmin query", ADMFLAG_KICK)
 {
 	json jClaim;
-	jClaim["admin_name"] = player ? player->GetPlayerName() : CONSOLE_NAME;
+	jClaim["admin_name"] = player ? player->GetPlayerName() : "SYSTEM";
 
 	if (std::time(nullptr) - g_pGFLBansSystem->m_wLastHeartbeat > 120)
 		ClientPrint(player, HUD_PRINTTALK, GFLBANS_PREFIX "GFLBans is currently not responding. Your claim may fail.");
@@ -688,7 +688,7 @@ GFLBans_Report::GFLBans_Report(CCSPlayerController* pCaller, std::string strMess
 							   CCSPlayerController* pBadPerson)
 {
 	m_jCaller = PlayerObj(pCaller, false);
-	m_strCallerName = pCaller ? pCaller->GetPlayerName() : CONSOLE_NAME;
+	m_strCallerName = pCaller ? pCaller->GetPlayerName() : "SYSTEM";
 	m_strMessage = strMessage.length() == 0 ? "No reason provided" :
 		strMessage.length() <= 120 ? strMessage : strMessage.substr(0, 120);
 	m_jBadPerson = pBadPerson ? PlayerObj(pBadPerson, false) : json();
