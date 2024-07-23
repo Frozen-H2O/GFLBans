@@ -1129,14 +1129,14 @@ void GFLBansSystem::GFLBans_CreateInfraction(std::shared_ptr<GFLBans_Infraction>
 				infraction = new CBanInfraction(iDuration, plyBadPerson->GetSteamId64());
 				break;
 			case Silence:
-				infraction = new CMuteInfraction(0, plyBadPerson->GetSteamId64(), false, true);
+				infraction = new CMuteInfraction(0, plyBadPerson->GetSteamId64());
 				g_pAdminSystem->FindAndRemoveInfraction(plyBadPerson, infraction->GetType(), false);
 				g_pAdminSystem->AddInfraction(infraction);
 				infraction->ApplyInfraction(plyBadPerson);
-				infraction = new CGagInfraction(0, plyBadPerson->GetSteamId64(), false, true);
+				infraction = new CGagInfraction(0, plyBadPerson->GetSteamId64());
 				break;
 			case AdminChatGag:
-				infraction = new CAdminChatGagInfraction(0, plyBadPerson->GetSteamId64(), false, true);
+				infraction = new CAdminChatGagInfraction(0, plyBadPerson->GetSteamId64());
 				break;
 			case CallAdminBlock:
 			case Warn:
@@ -1771,7 +1771,9 @@ void ParseInfraction(const CCommand &args, CCSPlayerController* pAdmin, bool bAd
 	int pSlots[MAXPLAYERS];
 	ETargetType nType;
 
-	uint64 iBlockedFlags = NO_RANDOM | NO_SELF | NO_BOT | NO_UNAUTHENTICATED;
+	uint64 iBlockedFlags = NO_RANDOM | NO_BOT | NO_UNAUTHENTICATED;
+	if (bAdding)
+		iBlockedFlags |= NO_SELF;
 
 	// Only allow multiple targetting for mutes that aren't perma (ie. !mute @all 1) for stopping mass mic spam
 	if (infType != Mute || (bAdding && iDuration == 0))
