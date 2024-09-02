@@ -49,7 +49,7 @@ std::string PlayerQuery(ZEPlayer* zpPlayer, bool bUseIP);
 bool IsValidIP(std::string strIP);
 
 // --- Convars ---
-static std::string g_strGFLBansApiUrl = "https://bans.aurora.vg/api/v1/";
+static std::string g_strGFLBansApiUrl = "https://bans.gflclan.com/api/";
 static bool g_bGFLBansAllServers = true;
 static int g_iMinOfflineDurations = 61;
 static int g_bFilterGagDuration = 60;
@@ -68,7 +68,7 @@ static std::regex g_regChatFilterNoPunish(g_strChatFilterNoPunish, std::regex_co
 // to force through, set this to 1, send the report, then change it back to the original value
 static int g_iGFLBansReportCooldown = 600;
 
-FAKE_STRING_CVAR(gflbans_api_url, "URL to interact with GFLBans API. Should end in \"api/v1/\"", g_strGFLBansApiUrl, false)
+FAKE_STRING_CVAR(gflbans_api_url, "URL to interact with GFLBans API. Should end in \"api/\"", g_strGFLBansApiUrl, false)
 FAKE_STRING_CVAR(gflbans_hostname, "Name of the server", g_strGFLBansHostname, false) // remove once we can read hostname convar
 FAKE_BOOL_CVAR(gflbans_include_other_servers, "Enables checking punishments from other GFL servers", g_bGFLBansAllServers, true, false)
 FAKE_INT_CVAR(gflbans_filtered_gag_duration, "Minutes to gag a player if they type a filtered message. Gags will only be issued with non-negative values", g_bFilterGagDuration, 60, false)
