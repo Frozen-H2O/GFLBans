@@ -148,7 +148,7 @@ bool Leader_CreateDefendMarker(ZEPlayer *pPlayer, Color clrTint, int iDuration)
 		return -1.0f;
 	});
 
-	CParticleSystem *pMarker = (CParticleSystem *)CreateEntityByName("info_particle_system");
+	CParticleSystem *pMarker = CreateEntityByName<CParticleSystem>("info_particle_system");
 
 	Vector vecOrigin = pPawn->GetAbsOrigin();
 	vecOrigin.z += 10;
@@ -247,7 +247,7 @@ void Leader_BulletImpact(IGameEvent *pEvent)
 	CCSPlayerPawn *pPawn = (CCSPlayerPawn *)pEvent->GetPlayerPawn("userid");
 	CBasePlayerWeapon *pWeapon = pPawn->m_pWeaponServices->m_hActiveWeapon.Get();
 
-	CParticleSystem* particle = (CParticleSystem*)CreateEntityByName("info_particle_system");
+	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
 
 	// Teleport particle to muzzle_flash attachment of player's weapon
 	particle->AcceptInput("SetParent", "!activator", pWeapon, nullptr);
@@ -354,7 +354,7 @@ CON_COMMAND_CHAT(glow, "<name> [duration] - Toggle glow highlight on a player")
 		return;
 	}
 
-	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_DEAD | NO_SELF | NO_MULTIPLE | NO_TERRORIST))
+	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_DEAD | NO_MULTIPLE | NO_TERRORIST))
 		return;
 
 	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlots[0]);
@@ -599,7 +599,7 @@ CON_COMMAND_CHAT(tracer, "<name> [color] - Toggle projectile tracers on a player
 	int iNumClients = 0;
 	int pSlots[MAXPLAYERS];
 
-	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_SELF | NO_MULTIPLE | NO_TERRORIST))
+	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_MULTIPLE | NO_TERRORIST))
 		return;
 
 	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(pSlots[0]);
