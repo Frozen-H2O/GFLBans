@@ -26,7 +26,7 @@
 
 using json = nlohmann::json;
 
-#define GFLBANS_PREFIX " \x02[GFLBans]\1 "
+#define GFLBANS_PREFIX " \x07[GFLBans]\1 "
 
 enum InfType
 {
