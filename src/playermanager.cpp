@@ -1346,7 +1346,7 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 	return GetPlayersFromString(pPlayer, pszTarget, iNumClients, rgiClients, iBlockedFlags, nUselessVariable);
 }
 
-const char* CPlayerManager::GetErrorString(ETargetError eType, int iSlot)
+std::string CPlayerManager::GetErrorString(ETargetError eType, int iSlot)
 {
 	switch (eType)
 	{
@@ -1395,9 +1395,9 @@ const char* CPlayerManager::GetErrorString(ETargetError eType, int iSlot)
 		switch (eType)
 		{
 			case ETargetError::UNAUTHENTICATED:
-				return (strName + " is not yet authenticated. Please wait a moment and try again.").c_str();
+				return strName + " is not yet authenticated. Please wait a moment and try again.";
 			case ETargetError::INSUFFICIENT_IMMUNITY_LEVEL:
-				return ("You do not have permission to target " + strName + ".").c_str();
+				return "You do not have permission to target " + strName + ".";
 		}
 	}
 
@@ -1415,7 +1415,7 @@ bool CPlayerManager::CanTargetPlayers(CCSPlayerController* pPlayer, const char* 
 
 	if (eType != ETargetError::NO_ERRORS)
 	{
-		ClientPrint(pPlayer, HUD_PRINTTALK, CHAT_PREFIX "%s", g_playerManager->GetErrorString(eType, (iNumClients == 0) ? 0 : pPlayer->GetPlayerSlot()));
+		ClientPrint(pPlayer, HUD_PRINTTALK, CHAT_PREFIX "%s", g_playerManager->GetErrorString(eType, (iNumClients == 0) ? 0 : pPlayer->GetPlayerSlot()).c_str());
 		return false;
 	}
 	return true;
