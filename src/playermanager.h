@@ -347,7 +347,7 @@ public:
 	void SetupInfiniteAmmo();
 	CPlayerSlot GetSlotFromUserId(uint16 userid);
 	ZEPlayer *GetPlayerFromUserId(uint16 userid);
-	ZEPlayer *GetPlayerFromSteamId(uint64 steamid);
+	ZEPlayer *GetPlayerFromSteamId(uint64 steamid, bool bIgnoreAuthentication = false);
 	ETargetError GetPlayersFromString(CCSPlayerController* pPlayer, const char* pszTarget, int &iNumClients, int *clients, uint64 iBlockedFlags = NO_TARGET_BLOCKS);
 	ETargetError GetPlayersFromString(CCSPlayerController* pPlayer, const char* pszTarget, int &iNumClients, int *clients, uint64 iBlockedFlags, ETargetType& nType);
 	static std::string GetErrorString(ETargetError eType, int iSlot = 0);
