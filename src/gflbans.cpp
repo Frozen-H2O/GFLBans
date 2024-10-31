@@ -50,8 +50,8 @@ bool IsValidIP(std::string strIP);
 
 // --- Convars ---
 static std::string g_strGFLBansApiUrl = "https://bans.gflclan.com/api/";
-static bool g_bGFLBansAllServers = true;
-static int g_iMinOfflineDurations = 61;
+static bool g_bGFLBansGlobal = true;
+static int g_iMinRealWorldDuration = 61;
 static int g_bFilterGagDuration = 60;
 static std::string g_strGFLBansHostname = "CS2 ZE Test";
 static std::string g_strGFLBansServerID = "999";
@@ -70,10 +70,10 @@ static int g_iGFLBansReportCooldown = 600;
 
 FAKE_STRING_CVAR(gflbans_api_url, "URL to interact with GFLBans API. Should end in \"api/\"", g_strGFLBansApiUrl, false)
 FAKE_STRING_CVAR(gflbans_hostname, "Name of the server", g_strGFLBansHostname, false) // remove once we can read hostname convar
-FAKE_BOOL_CVAR(gflbans_include_other_servers, "Enables checking punishments from other GFL servers", g_bGFLBansAllServers, true, false)
+FAKE_BOOL_CVAR(gflbans_global, "Makes the server use global GFLBans punishments. This being enabled requires all admins to have PERMISSION_SCOPE_GLOBAL in order to issue punishments on the server.", g_bGFLBansGlobal, true, false)
 FAKE_INT_CVAR(gflbans_filtered_gag_duration, "Minutes to gag a player if they type a filtered message. Gags will only be issued with non-negative values", g_bFilterGagDuration, 60, false)
-FAKE_INT_CVAR(gflbans_min_offline_punish_duration, "Minimum amount of minutes for a mute/gag duration to tick down while client is disconnected. 0 or negative values force all punishments Online Only", g_iMinOfflineDurations, 61, false)
-FAKE_INT_CVAR(gflbans_report_cooldown, "Minimum amount of seconds between !report/!calladmin usages. Minimum of 1 second.", g_iGFLBansReportCooldown, 600, false)
+FAKE_INT_CVAR(gflbans_min_real_world_timed, "Minimum amount of minutes for a mute/gag duration to be real world timed. 0 or negative values force all punishments to be game timed", g_iMinRealWorldDuration, 61, false)
+FAKE_INT_CVAR(gflbans_report_cooldown, "Minimum amount of seconds between c_report/c_calladmin usages. Minimum of 1 second.", g_iGFLBansReportCooldown, 600, false)
 
 //These need to update g_rghdGFLBansAuth when changed, but otherwise work just like a fake cvar as if they weren't commented out:
 // FAKE_STRING_CVAR(gflbans_server_id, "GFLBans ID for the server.", g_strGFLBansServerID, true)
@@ -594,7 +594,7 @@ GFLBans_Infraction::GFLBans_Infraction(InfType infType, CHandle<CCSPlayerControl
 {
 	m_wCreated = std::time(nullptr);
 	m_wExpires = m_wCreated + (iDuration * 60);
-	m_gisScope = g_bGFLBansAllServers ? Global : Server;
+	m_gisScope = g_bGFLBansGlobal ? Global : Server;
 }
 
 inline bool GFLBans_Infraction::IsSession() const noexcept
@@ -668,8 +668,8 @@ json GFLBans_InfractionRemoval::CreateInfractionJSON() const
 	}
 
 	//Omit for default true
-	if (!g_bGFLBansAllServers)
-		jRequestBody["include_other_servers"] = g_bGFLBansAllServers;
+	if (!g_bGFLBansGlobal)
+		jRequestBody["include_other_servers"] = g_bGFLBansGlobal;
 
 	json jPunishments = json::array();
 	if (m_infType == Silence)
@@ -702,7 +702,7 @@ json GFLBans_Report::CreateReportJSON() const
 	jRequestBody["caller_name"] = m_strCallerName;
 
 	// Omit for false
-	if (g_bGFLBansAllServers)
+	if (g_bGFLBansGlobal)
 		jRequestBody["include_other_servers"] = true;
 
 	jRequestBody["message"] = m_strMessage;
@@ -879,7 +879,7 @@ bool GFLBansSystem::GFLBans_Heartbeat()
 	//	jHeartbeat["locked"] = true;
 
 	// Omit for true
-	if (!g_bGFLBansAllServers)
+	if (!g_bGFLBansGlobal)
 		jHeartbeat["include_other_servers"] = false;
 
 #ifdef _DEBUG
@@ -1862,7 +1862,7 @@ void ParseInfraction(const CCommand &args, CCSPlayerController* pAdmin, bool bAd
 
 	if (bAdding)
 	{
-		bool bOnlineOnly = iDuration > 0 && (g_iMinOfflineDurations <= 0 || args[2][0] == '+' || iDuration < g_iMinOfflineDurations);
+		bool bOnlineOnly = iDuration > 0 && (g_iMinRealWorldDuration <= 0 || args[2][0] == '+' || iDuration < g_iMinRealWorldDuration);
 		CreateInfraction(infType, EchoType::All, pAdmin, pTarget, strReason, iDuration, bOnlineOnly);
 	}
 	else
@@ -2060,7 +2060,7 @@ std::string PlayerQuery(ZEPlayer* zpPlayer, bool bUseIP)
 
 	std::string strURL = g_strGFLBansApiUrl + "infractions/check?gs_service=steam&gs_id=";
 	strURL.append(std::to_string(zpPlayer->IsAuthenticated() ? zpPlayer->GetSteamId64() : zpPlayer->GetUnauthenticatedSteamId64()));
-	if (g_bGFLBansAllServers)
+	if (g_bGFLBansGlobal)
 		strURL.append("&include_other_servers=false");
 
 	if (bUseIP)
