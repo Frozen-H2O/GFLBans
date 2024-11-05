@@ -54,7 +54,7 @@ Square brackets [] indicate a parameter is optional. Angled brackets <> indicate
 |``callunban``|``<name> [reason]``|``ADMFLAG_CHAT``|Alias for ``uncallban`` |
 
 ### Duration Types:
-- **Session**: Lasts until the end of the current map. This is currently buggy and recommended against being used.
+- **Session**: Lasts until the end of the current map.
   - No duration provided. Ex. ``!mute Ice``
   - Invalid duration provided. Ex. ``!mute Ice one``
   - Negative duration provided. Ex. ``!mute Ice -1``

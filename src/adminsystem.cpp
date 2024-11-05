@@ -1645,10 +1645,9 @@ void CAdminSystem::RemoveSessionPunishments(float fDelay)
 
 		ZEPlayer* pPlayer = g_playerManager->GetPlayerFromSteamId(m_vecInfractions[i]->GetSteamId64());
 
-		if (!pPlayer || pPlayer->IsFakeClient())
-			continue;
+		if (pPlayer && !pPlayer->IsFakeClient())
+			m_vecInfractions[i]->UndoInfraction(pPlayer);
 
-		m_vecInfractions[i]->UndoInfraction(pPlayer);
 		m_vecInfractions.Remove(i);
 	}
 }
