@@ -24,6 +24,7 @@
 #include "ctimer.h"
 #include "engine/igameeventsystem.h"
 #include "entity/ccsplayercontroller.h"
+#include "gflbans.h"
 #include "leader.h"
 #include "map_votes.h"
 #include "networksystem/inetworkmessages.h"
@@ -35,7 +36,6 @@
 #include "utils/entity.h"
 #include "utlstring.h"
 #include <../cs2fixes.h>
-#include "gflbans.h"
 
 #include "tier0/memdbgon.h"
 
@@ -53,7 +53,7 @@ FAKE_INT_CVAR(cs2f_admin_immunity, "Mode for which admin immunity system targett
 FAKE_BOOL_CVAR(cs2f_map_steamids_enable, "Whether to make Steam ID's available to maps", g_bEnableMapSteamIds, false, 0)
 
 ZEPlayerHandle::ZEPlayerHandle() :
-	m_Index(INVALID_ZEPLAYERHANDLE_INDEX){};
+	m_Index(INVALID_ZEPLAYERHANDLE_INDEX) {};
 
 ZEPlayerHandle::ZEPlayerHandle(CPlayerSlot slot)
 {
@@ -1523,7 +1523,6 @@ ZEPlayer* CPlayerManager::GetPlayerFromUserId(uint16 userid)
 ZEPlayer* CPlayerManager::GetPlayerFromSteamId(uint64 steamid, bool bIgnoreAuthentication)
 {
 	for (ZEPlayer* player : m_vecPlayers)
-	{
 		if (player && ((player->IsAuthenticated() && player->GetSteamId64() == steamid) || (bIgnoreAuthentication && player->GetUnauthenticatedSteamId64() == steamid)))
 			return player;
 

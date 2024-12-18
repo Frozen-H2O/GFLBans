@@ -113,6 +113,7 @@ public:
 
 	// Creates a JSON object to pass in a POST request to GFLBans
 	virtual json CreateInfractionJSON() const override;
+
 private:
 	std::string m_strID;
 	uint m_wCreated; // UNIX timestamp
@@ -221,4 +222,4 @@ private:
 								std::string strReason, InfType iType, EchoType echo, bool bWarnFirst);
 };
 
-extern GFLBansSystem *g_pGFLBansSystem;
+extern GFLBansSystem* g_pGFLBansSystem;
